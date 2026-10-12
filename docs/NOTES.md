@@ -32,7 +32,10 @@ This file explains how the code is organized and why. It is updated in the same 
 | `src/quantrl/viz/plots.py` | Shared plot style and training curves across seeds. |
 | `src/quantrl/utils/seeding.py` | Seeds Python, NumPy, and torch, enables deterministic torch algorithms, and resolves the device string. |
 | `src/quantrl/utils/run_info.py` | Collects the git commit, whether the tree was dirty, package versions, Python version, and platform for each run. |
-| `src/quantrl/quant/` | Stubs for Phase 3 and Phase 4. |
+| `src/quantrl/quant/quantizer.py` | Pure functions: bit-width validation, scales, integer quantization, fake quantization with the straight-through estimator. |
+| `src/quantrl/quant/layers.py` | `ActivationQuantizer` (range tracking and fake quantization of a layer input), `QuantLinear` (a drop-in `nn.Linear` with quantized weights and inputs), and `build_quantized_actor`. |
+| `src/quantrl/quant/ptq.py` | Post-training quantization: copy fp32 weights into a quantized actor, calibrate activation ranges, and collect calibration inputs by running a policy. |
+| `src/quantrl/quant/qat.py` | Stub for Phase 4. |
 | `scripts/train.py` | Trains one or more seeds from a config file with optional overrides. |
 | `scripts/evaluate.py` | Evaluates checkpoints and writes a tidy per-seed CSV and a JSON summary across seeds. |
 | `scripts/make_plots.py` | Plots training curves for a set of run directories. |
@@ -91,6 +94,69 @@ Evaluation uses the deterministic action `tanh(mu(x))`. Episode `i` of an evalua
 
 Within one training seed, the confidence interval for success rate or return is a percentile bootstrap over episodes: resample the episode outcomes with replacement 10,000 times, take the mean of each resample, and report the 2.5th and 97.5th percentiles. Across training seeds, `aggregate_across_seeds` reports the mean, sample standard deviation, minimum, maximum, and a bootstrap interval over the seed means. With only 3 seeds that interval is coarse (it can only take values between the smallest and largest seed), so the min and max are reported alongside it.
 
+## How quantization works
+
+### The quantizer
+
+Quantization replaces a real number with one of a small set of evenly spaced values. This project uses symmetric uniform quantization with `b` bits:
+
+- The integer range is `[-L, L]` with `L = 2^(b-1) - 1`, so 8 bits gives [-127, 127], 4 bits gives [-7, 7], 3 bits gives [-3, 3], and 2 bits gives [-1, 1]. That is `2L + 1 = 2^b - 1` levels, one fewer than `2^b`, because the range is kept symmetric around zero (the value `-2^(b-1)` is unused). Zero is always exactly representable.
+- A scale `s` maps the real range onto the integers: `s = max_abs / L`, where `max_abs` is the largest magnitude the quantizer expects to see. The scale is floored at a tiny positive value (1e-8, or the smallest normal number of the tensor's dtype if that is larger, as in float16) so an all-zero tensor quantizes to zeros instead of dividing by zero.
+- Quantize: `q = clamp(round(x / s), -L, L)`, an integer.
+- Dequantize: `x_hat = q * s`.
+
+Inside the range, the error `|x_hat - x|` is at most `s / 2`. Values beyond `max_abs` are clipped to `+-L * s`.
+
+`bits = 32` means "disabled": the fake-quantization functions and the quantized layers return their input unchanged, and `QuantLinear` computes exactly what `nn.Linear` does. The integer-level functions (`quantize_symmetric`, `max_quant_level`) reject 32, because there is no integer grid to return. Bit widths must be integers: 32, or 2 to 16. Anything else, such as 33 or 4.5, raises an error instead of silently disabling quantization.
+
+### Weights
+
+A weight tensor's scale comes from its own largest magnitude at the moment of the forward pass, so nothing is ever clipped.
+
+- Per tensor: one `max_abs` for the whole weight matrix.
+- Per channel: one `max_abs` per output row (`weight.abs().amax(dim=1)`), so a row with small weights is not forced onto the coarse grid of a row with large weights. A test checks that per-channel quantization has lower error than per-tensor when one row is much larger than the rest.
+
+Biases stay fp32. In integer inference engines biases are usually stored at 32 bits anyway, and they are a tiny fraction of the parameters.
+
+### Activations
+
+Each `QuantLinear` quantizes its input, so for the actor the quantized activations are the normalized observation (input of the first layer) and the output of each hidden ReLU. The final layer's output (the action mean and log standard deviation) is left in fp32, since the tanh squashing and the action itself are part of the controller, not the network.
+
+Unlike weights, activation ranges cannot be read off a fixed tensor, because they depend on the data. `ActivationQuantizer` keeps a scalar `running_max_abs`:
+
+- In training mode, and unless frozen, each batch updates it with an exponential moving average: `running = m * running + (1 - m) * max|x|` with `m = quant.activation_ema_momentum = 0.99`. Values of `m` outside [0, 1] are rejected. The very first batch initializes it directly.
+- In evaluation mode, or after `freeze()`, the range is fixed.
+- During PTQ calibration, the quantizer records the plain maximum of `|x|` over all calibration batches and passes activations through unquantized, then freezes.
+
+Until a range has been observed, the quantizer passes values through unchanged.
+
+### Fake quantization and the straight-through estimator
+
+Training and evaluation both use fake quantization: values are quantized and immediately dequantized, so the arithmetic stays in fp32 but every weight and activation is restricted to the values an integer implementation could represent. The output of a fake-quantized network matches what an integer kernel would compute up to fp32 rounding of the accumulation.
+
+Rounding is a step function, so its true derivative is zero almost everywhere and backpropagation through it would stop all learning. The straight-through estimator (STE) treats rounding as the identity in the backward pass. In code:
+
+`round_ste(v) = v + (round(v) - v).detach()`
+
+The forward value is `round(v)`. The `detach` removes the correction term from the graph, so the gradient of `round_ste(v)` with respect to `v` is exactly 1. The full fake quantizer is
+
+`x_hat = clamp(round_ste(x / s), -L, L) * s`
+
+and its gradient with respect to `x` is 1 where `x` is inside `[-L * s, L * s]` and 0 where the clamp is active. This "clipped STE" stops pushing on values that are already saturated. The scale `s` is treated as a constant (weights' scale is computed from detached values, and activation ranges are buffers), so there is no learned step size. Tests check the gradient is exactly 1 inside the range and 0 outside, and that gradients reach `QuantLinear` weights.
+
+### Building a quantized actor
+
+`build_quantized_actor` constructs the same `GaussianActor` used by SAC but passes a `linear_factory` that creates `QuantLinear` layers with the configured bit widths. Because `QuantLinear` subclasses `nn.Linear`, the weight and bias parameter names are identical, so an fp32 actor's state dict loads directly. The only extra entries are the activation quantizers' buffers. `load_full_precision_weights` checks that nothing else is missing, unexpected, or of the wrong shape before loading.
+
+### Post-training quantization (PTQ)
+
+1. Collect calibration inputs by running the trained fp32 policy deterministically on calibration episodes and recording the normalized inputs it sees (`collect_calibration_inputs`). Calibration episodes should use seeds disjoint from the evaluation seeds.
+2. Build a quantized actor and copy the fp32 weights into it.
+3. Run the calibration inputs through it with every activation quantizer in calibration mode, then freeze the ranges (`calibrate_activation_ranges`). An empty calibration set raises an error before any range is touched, rather than silently leaving activations unquantized. The quantized actor is created on the same device and dtype as the fp32 actor.
+4. Evaluate it like any other policy.
+
+All activation ranges are calibrated in a single pass over fp32 activations, so a later layer's range is measured on activations that were not yet quantized upstream. A test checks that PTQ at 32 bits gives bitwise identical outputs to the fp32 actor, and a check on the trained FetchReach checkpoint confirmed identical actions on 1,000 real calibration inputs.
+
 ## Design decisions
 
 - Configs are plain dataclasses serialized to JSON, so there is no hidden global state and every run can save exactly what it used.
@@ -100,6 +166,9 @@ Within one training seed, the confidence interval for success rate or return is 
 - Run outputs (checkpoints, logs, raw videos) go to `runs/`, which is ignored by git. Only small summaries are copied into `results/` and `assets/`.
 
 ## Known limitations
+
+- Activations are quantized symmetrically even after a ReLU, where they are never negative, so half of the integer range goes unused for hidden activations. An unsigned activation quantizer would give post-ReLU activations one extra bit of resolution. The symmetric version is kept for now because it is what the project specifies; this matters most at 2 and 3 bits, where a post-ReLU activation can only take 2 or 4 distinct values.
+- The scale is the maximum magnitude, not a percentile or a learned step size, so a single outlier activation in the calibration data stretches the grid for everything else.
 
 - The mujoco pin above should be revisited when gymnasium-robotics releases a fix.
 - FetchReach is easy: all seeds solve it within a few thousand steps, so it can only reveal quantization damage that is large. FetchPush (Phase 2) is the more sensitive benchmark.
