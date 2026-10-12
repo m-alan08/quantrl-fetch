@@ -2,15 +2,27 @@
 
 How few bits does a robot arm policy actually need? This project trains reinforcement learning policies for a simulated Fetch robot arm (MuJoCo, via Gymnasium Robotics) and then squeezes the policy's actor network down to low-bit integer precision: 8 bits, then 6, 5, 4, 3, and 2. It compares three ways of getting a low-bit actor (quantize after training, fine-tune with quantization in the loop, or train with quantization from the start) and later asks whether a post-training stage, behavior cloning followed by online post-training, can win back the performance that quantization costs. The motivation is deployment: a policy that runs on a microcontroller or a small accelerator has to live with low-precision arithmetic, and it is worth knowing where that starts to break a closed-loop controller and what it takes to repair it.
 
-**Status:** Phase 0 (setup and skeleton) is done, with CI waiting on a token scope. Phase 1 (SAC and HER on FetchReach) is next. See [ROADMAP.md](ROADMAP.md).
+**Status:** Phase 0 (setup) and Phase 1 (SAC and HER at fp32 on FetchReach) are done. Phase 2 (FetchPush) and Phase 3 (quantization) are next. CI is written but not yet active (see the roadmap). See [ROADMAP.md](ROADMAP.md).
 
 ## Key results
 
-Pending. No numbers are reported here until they come from real runs.
+The quantization results are pending. What has been measured so far is the fp32 baseline:
+
+| Task | Precision | Training seeds | Success rate (mean, min to max over seeds) | Mean return | Mean final distance to goal |
+| --- | --- | --- | --- | --- | --- |
+| FetchReach-v4 | fp32 | 3 | 1.00 (1.00 to 1.00) | -1.54 | 3.1 cm |
+
+Each seed is evaluated with deterministic actions on the same 100 evaluation episodes (fixed environment seeds). Every seed passed 95 percent evaluation success by 3,000 environment steps. Raw numbers: [results/phase1_fetch_reach_fp32_eval.csv](results/phase1_fetch_reach_fp32_eval.csv) and [results/phase1_fetch_reach_fp32_summary.json](results/phase1_fetch_reach_fp32_summary.json).
+
+![FetchReach training curves](assets/fetch_reach_fp32_training.png)
 
 ## Demo
 
-Pending. A side-by-side clip of an fp32 policy and a low-bit policy, plus the main success-versus-bit-width chart, will go here after Phase 4.
+The fp32 FetchReach policy on four evaluation episodes (the red dot is the goal):
+
+![fp32 FetchReach policy](assets/fetch_reach_fp32.gif)
+
+A side-by-side clip of an fp32 policy and a low-bit policy, plus the main success-versus-bit-width chart, will go here after Phase 4.
 
 ## Method
 
@@ -37,7 +49,16 @@ uv sync
 uv run pytest -q
 ```
 
-Training and video commands arrive with Phase 1.
+Train SAC with HER on FetchReach for one seed (about 1.5 minutes on an Apple M5 CPU), then render four evaluation episodes of the trained policy:
+
+```bash
+uv run python scripts/train.py --config configs/fetch_reach.json --seed 0
+uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/checkpoint.pt --out videos/fetch_reach_fp32.mp4 --gif videos/fetch_reach_fp32.gif
+```
+
+Training writes `runs/fetch_reach_fp32_seed0/` with the resolved config, run metadata (git commit, package versions, seed), a progress CSV, a summary JSON, and the checkpoint. Any config field can be overridden from the command line, for example `--set train.total_steps=5000 sac.batch_size=512`.
+
+If `uv run` reports `No module named 'quantrl'` on macOS, the `.venv` files have picked up the macOS hidden flag, which makes Python skip the editable install. Run `chflags -R nohidden .venv` to fix it ([docs/NOTES.md](docs/NOTES.md) has the details).
 
 ## Repository layout
 
@@ -60,11 +81,25 @@ docs/        NOTES.md, a plain-language guide to the code
 
 ## Reproducing results
 
-Pending. Each phase will list its config files, seeds, and measured runtimes on an Apple Silicon Mac here.
+All runs use CPU with one torch thread, which is bitwise reproducible: rerunning a seed gives identical training curves and identical actor weights. Runtimes below were measured on an Apple M5 (10 cores).
+
+**Phase 1, FetchReach fp32** (config [configs/fetch_reach.json](configs/fetch_reach.json), seeds 0, 1, 2, 30,000 environment steps each):
+
+```bash
+uv run python scripts/train.py --config configs/fetch_reach.json --seed 0 1 2
+uv run python scripts/evaluate.py --checkpoints runs/fetch_reach_fp32_seed{0,1,2}/checkpoint.pt --out results/phase1_fetch_reach_fp32_eval.csv --summary results/phase1_fetch_reach_fp32_summary.json
+uv run python scripts/make_plots.py --runs runs/fetch_reach_fp32_seed{0,1,2} --out assets/fetch_reach_fp32_training.png --title "SAC + HER on FetchReach-v4 (fp32, 3 seeds)" --csv results/phase1_fetch_reach_fp32_progress.csv
+uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/checkpoint.pt --episodes 4 --out assets/fetch_reach_fp32.mp4 --gif assets/fetch_reach_fp32.gif
+```
+
+Measured runtime: one seed alone took 90 seconds of training (96 seconds end to end including the final 100-episode evaluation). Three seeds run as parallel processes took 104 to 105 seconds each. Rendering the four-episode video took under 5 seconds. Passing several seeds to one `train.py` call runs them one after another; launching one process per seed runs them in parallel.
 
 ## Limitations and caveats
 
 - mujoco is pinned below 3.12 because newer releases break Fetch environment creation in gymnasium-robotics 1.4.2. Details are in [docs/NOTES.md](docs/NOTES.md).
+- FetchReach is easy (every seed solves it in about 3,000 steps), so it can only reveal large quantization damage. FetchPush is the harder benchmark.
+- Success means ending within 5 cm of the goal, and the trained FetchReach policy ends about 3 cm away on average, so small precision losses can flip successes. Mean final distance is reported alongside success for this reason.
+- Three training seeds give a rough estimate of the spread across seeds.
 - Quantization here is simulated (fake quantization in fp32 arithmetic). It models the accuracy effect of low-bit weights and activations but does not measure speed or energy on real integer hardware.
 
 ## Roadmap
