@@ -41,10 +41,23 @@ def test_max_quant_level_is_symmetric_signed_range():
     assert [max_quant_level(bits) for bits in [2, 3, 4, 8]] == [1, 3, 7, 127]
 
 
-@pytest.mark.parametrize("bits", [0, 1, 17, 31])
+@pytest.mark.parametrize("bits", [0, 1, 17, 31, 33, 64, 4.5, 8.0, True, "8"])
 def test_invalid_bit_widths_are_rejected(bits):
     with pytest.raises(ValueError):
         validate_bits(bits)
+
+
+def test_invalid_bit_widths_are_rejected_by_layers():
+    with pytest.raises(ValueError):
+        QuantLinear(4, 2, weight_bits=33)
+    with pytest.raises(ValueError):
+        ActivationQuantizer(4.5)
+
+
+def test_integer_quantization_rejects_the_disabled_bit_width():
+    with pytest.raises(ValueError):
+        quantize_symmetric(torch.ones(3), torch.tensor(1.0), 32)
+    assert torch.equal(fake_quantize(torch.ones(3), torch.tensor(1.0), 32), torch.ones(3))
 
 
 @pytest.mark.parametrize("bits", LOW_BIT_WIDTHS)
@@ -151,6 +164,39 @@ def test_calibration_records_max_abs_and_freezes():
     assert first_quantizer.running_max_abs.item() == pytest.approx(inputs.abs().max().item())
     assert bool(first_quantizer.frozen)
     assert not first_quantizer.calibrating
+
+
+@pytest.mark.parametrize("empty", [np.zeros((0, 13), np.float32), torch.zeros(0, 13)])
+def test_calibration_rejects_empty_data_without_touching_ranges(empty):
+    actor = build_quantized_actor(13, 4, SAC_CONFIG, QuantConfig(weight_bits=4, activation_bits=4))
+    actor.train()
+    actor(calibration_batch(rows=8))
+    quantizer = actor.network[0].input_quantizer
+    before = quantizer.running_max_abs.clone()
+    with pytest.raises(ValueError):
+        calibrate_activation_ranges(actor, empty)
+    assert torch.equal(quantizer.running_max_abs, before)
+    assert not bool(quantizer.frozen)
+
+
+def test_ptq_actor_matches_source_dtype():
+    fp32_actor = make_fp32_actor().to(torch.float64)
+    quantized_actor = quantize_actor_post_training(
+        fp32_actor, SAC_CONFIG, QuantConfig(weight_bits=8, activation_bits=8), calibration_batch()
+    )
+    assert next(quantized_actor.parameters()).dtype == torch.float64
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="MPS not available")
+def test_ptq_actor_stays_on_source_device():
+    fp32_actor = make_fp32_actor().to("mps")
+    quantized_actor = quantize_actor_post_training(
+        fp32_actor,
+        SAC_CONFIG,
+        QuantConfig(weight_bits=8, activation_bits=8),
+        calibration_batch().to("mps"),
+    )
+    assert next(quantized_actor.parameters()).device.type == "mps"
 
 
 def test_ptq_at_32_bits_reproduces_fp32_actor_exactly():

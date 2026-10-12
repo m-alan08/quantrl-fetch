@@ -9,22 +9,29 @@ SCALE_FLOOR = 1e-8
 
 
 def is_full_precision(bits: int) -> bool:
-    return bits >= FULL_PRECISION_BITS
+    return bits == FULL_PRECISION_BITS
 
 
 def validate_bits(bits: int) -> int:
-    if is_full_precision(bits):
-        return FULL_PRECISION_BITS
-    if not MIN_BITS <= bits <= MAX_INTEGER_BITS:
+    is_integer = isinstance(bits, int) and not isinstance(bits, bool)
+    if is_integer and (bits == FULL_PRECISION_BITS or MIN_BITS <= bits <= MAX_INTEGER_BITS):
+        return bits
+    raise ValueError(
+        f"bits must be an integer between {MIN_BITS} and {MAX_INTEGER_BITS}, "
+        f"or {FULL_PRECISION_BITS} for full precision, got {bits!r}"
+    )
+
+
+def validate_integer_bits(bits: int) -> int:
+    if is_full_precision(validate_bits(bits)):
         raise ValueError(
-            f"bits must be between {MIN_BITS} and {MAX_INTEGER_BITS}, or 32 for full precision, "
-            f"got {bits}"
+            f"Integer quantization needs a low bit width; {FULL_PRECISION_BITS} means disabled"
         )
     return bits
 
 
 def max_quant_level(bits: int) -> int:
-    return 2 ** (validate_bits(bits) - 1) - 1
+    return 2 ** (validate_integer_bits(bits) - 1) - 1
 
 
 def round_straight_through(values: torch.Tensor) -> torch.Tensor:

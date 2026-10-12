@@ -41,10 +41,17 @@ def load_full_precision_weights(quantized_actor: GaussianActor, fp32_state: dict
 def calibrate_activation_ranges(
     model: torch.nn.Module, calibration_inputs: np.ndarray | torch.Tensor, batch_size: int = 1024
 ) -> None:
+    reference_parameter = next(model.parameters())
+    inputs = torch.as_tensor(
+        calibration_inputs, dtype=reference_parameter.dtype, device=reference_parameter.device
+    )
+    if inputs.ndim != 2 or inputs.shape[0] == 0:
+        raise ValueError(
+            f"Calibration needs a non-empty 2D batch of inputs, got shape {tuple(inputs.shape)}"
+        )
     quantizers = list(activation_quantizers(model))
     for quantizer in quantizers:
         quantizer.start_calibration()
-    inputs = torch.as_tensor(calibration_inputs, dtype=torch.float32)
     for start in range(0, inputs.shape[0], batch_size):
         model(inputs[start : start + batch_size])
     for quantizer in quantizers:
@@ -57,9 +64,10 @@ def quantize_actor_post_training(
     quant_config: QuantConfig,
     calibration_inputs: np.ndarray | torch.Tensor,
 ) -> GaussianActor:
+    source_parameter = next(fp32_actor.parameters())
     quantized_actor = build_quantized_actor(
         fp32_actor.input_dim, fp32_actor.action_dim, sac_config, quant_config
-    )
+    ).to(device=source_parameter.device, dtype=source_parameter.dtype)
     load_full_precision_weights(quantized_actor, fp32_actor.state_dict())
     calibrate_activation_ranges(quantized_actor, calibration_inputs)
     quantized_actor.eval()

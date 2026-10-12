@@ -107,7 +107,7 @@ Quantization replaces a real number with one of a small set of evenly spaced val
 
 Inside the range, the error `|x_hat - x|` is at most `s / 2`. Values beyond `max_abs` are clipped to `+-L * s`.
 
-`bits = 32` means "disabled": every quantization function returns its input unchanged, and `QuantLinear` computes exactly what `nn.Linear` does. Valid low-bit widths are 2 to 16.
+`bits = 32` means "disabled": the fake-quantization functions and the quantized layers return their input unchanged, and `QuantLinear` computes exactly what `nn.Linear` does. The integer-level functions (`quantize_symmetric`, `max_quant_level`) reject 32, because there is no integer grid to return. Bit widths must be integers: 32, or 2 to 16. Anything else, such as 33 or 4.5, raises an error instead of silently disabling quantization.
 
 ### Weights
 
@@ -152,7 +152,7 @@ and its gradient with respect to `x` is 1 where `x` is inside `[-L * s, L * s]` 
 
 1. Collect calibration inputs by running the trained fp32 policy deterministically on calibration episodes and recording the normalized inputs it sees (`collect_calibration_inputs`). Calibration episodes should use seeds disjoint from the evaluation seeds.
 2. Build a quantized actor and copy the fp32 weights into it.
-3. Run the calibration inputs through it with every activation quantizer in calibration mode, then freeze the ranges (`calibrate_activation_ranges`).
+3. Run the calibration inputs through it with every activation quantizer in calibration mode, then freeze the ranges (`calibrate_activation_ranges`). An empty calibration set raises an error before any range is touched, rather than silently leaving activations unquantized. The quantized actor is created on the same device and dtype as the fp32 actor.
 4. Evaluate it like any other policy.
 
 All activation ranges are calibrated in a single pass over fp32 activations, so a later layer's range is measured on activations that were not yet quantized upstream. A test checks that PTQ at 32 bits gives bitwise identical outputs to the fp32 actor, and a check on the trained FetchReach checkpoint confirmed identical actions on 1,000 real calibration inputs.
