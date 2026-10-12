@@ -10,6 +10,8 @@ import torch.nn.functional as F
 from quantrl.algos.networks import GaussianActor, LinearFactory, TwinQCritic, plain_linear
 from quantrl.config import SACConfig
 
+UPDATE_METRIC_NAMES = ("critic_loss", "actor_loss", "alpha_loss", "alpha", "entropy", "q_mean")
+
 
 class SACAgent:
     def __init__(

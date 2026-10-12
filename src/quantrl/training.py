@@ -13,7 +13,7 @@ import torch
 
 from quantrl.algos.networks import LinearFactory, plain_linear
 from quantrl.algos.replay import HindsightReplayBuffer
-from quantrl.algos.sac import SACAgent
+from quantrl.algos.sac import UPDATE_METRIC_NAMES, SACAgent
 from quantrl.checkpoint import save_checkpoint
 from quantrl.config import RunConfig, save_config
 from quantrl.envs.factory import env_dimensions, make_env
@@ -27,14 +27,32 @@ class ProgressLog:
     def __init__(self, path: Path):
         self.path = path
         self.fieldnames: list[str] | None = None
+        self.rows: list[dict[str, Any]] = []
 
     def write(self, row: dict[str, Any]) -> None:
-        if self.fieldnames is None:
-            self.fieldnames = list(row)
+        self.rows.append(row)
+        new_columns = [key for key in row if self.fieldnames is None or key not in self.fieldnames]
+        if self.fieldnames is None or new_columns:
+            self.fieldnames = [*(self.fieldnames or []), *new_columns]
             with self.path.open("w", newline="") as handle:
-                csv.DictWriter(handle, fieldnames=self.fieldnames).writeheader()
+                writer = csv.DictWriter(handle, fieldnames=self.fieldnames, restval="")
+                writer.writeheader()
+                writer.writerows(self.rows)
+            return
         with self.path.open("a", newline="") as handle:
-            csv.DictWriter(handle, fieldnames=self.fieldnames).writerow(row)
+            csv.DictWriter(handle, fieldnames=self.fieldnames, restval="").writerow(row)
+
+
+class UpdateScheduler:
+    def __init__(self, updates_per_step: float):
+        self.updates_per_step = updates_per_step
+        self.carry = 0.0
+
+    def updates_for(self, environment_steps: int) -> int:
+        self.carry += self.updates_per_step * environment_steps
+        count = int(self.carry + 1e-9)
+        self.carry -= count
+        return count
 
 
 def collect_episode(env, agent, normalizer, episode_length, use_random_actions):
@@ -128,7 +146,7 @@ def train(
 
     progress = ProgressLog(run_dir / "progress.csv")
     training_eval_seeds = evaluation_seeds(config.eval.seed_offset, config.train.eval_episodes)
-    updates_per_episode = int(round(config.train.updates_per_step * episode_length))
+    update_scheduler = UpdateScheduler(config.train.updates_per_step)
     total_steps = 0
     episodes = 0
     next_eval_step = config.train.eval_interval
@@ -161,7 +179,7 @@ def train(
         recent_train_success.append(success)
 
         if total_steps >= config.train.update_after:
-            for _ in range(updates_per_episode):
+            for _ in range(update_scheduler.updates_for(episode_length)):
                 batch = build_update_batch(buffer, normalizer, config.sac.batch_size)
                 for key, value in agent.update(batch).items():
                     recent_metrics[key].append(value)
@@ -187,7 +205,12 @@ def train(
                 "wall_seconds": round(time.perf_counter() - start_time, 2),
                 "train_success": float(np.mean(recent_train_success)),
                 **{f"eval_{key}": value for key, value in result.to_dict().items()},
-                **{key: float(np.mean(values)) for key, values in recent_metrics.items()},
+                **{
+                    key: float(np.mean(recent_metrics[key]))
+                    if recent_metrics[key]
+                    else float("nan")
+                    for key in UPDATE_METRIC_NAMES
+                },
             }
             progress.write(row)
             if verbose:

@@ -1,6 +1,7 @@
 [
   {
     "env_id": "FetchReach-v4",
+    "name": "fetch_reach_fp32",
     "method": "fp32",
     "weight_bits": 32,
     "activation_bits": 32,
@@ -15,6 +16,7 @@
   },
   {
     "env_id": "FetchReach-v4",
+    "name": "fetch_reach_fp32",
     "method": "fp32",
     "weight_bits": 32,
     "activation_bits": 32,
@@ -29,6 +31,7 @@
   },
   {
     "env_id": "FetchReach-v4",
+    "name": "fetch_reach_fp32",
     "method": "fp32",
     "weight_bits": 32,
     "activation_bits": 32,

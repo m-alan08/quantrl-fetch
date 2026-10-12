@@ -55,7 +55,7 @@ def main() -> None:
     if arguments.out:
         Path(arguments.out).parent.mkdir(parents=True, exist_ok=True)
         frame.to_csv(arguments.out, index=False)
-    group_columns = ["env_id", "method", "weight_bits", "activation_bits"]
+    group_columns = ["env_id", "name", "method", "weight_bits", "activation_bits"]
     summary = pd.concat(
         [
             aggregate_across_seeds(frame, group_columns, metric)
