@@ -10,7 +10,7 @@ Each phase lands on main through its own pull requests. A box is checked only af
 - [x] Verify offscreen rendering with `render_mode="rgb_array"` on macOS
 - [x] Full repository skeleton with stub modules
 - [x] README written from scratch, docs/NOTES.md, this roadmap
-- [ ] CI running ruff and pytest on pull requests (workflow file is ready; pushing it needs a gh token with the `workflow` scope)
+- [x] CI running ruff and pytest on pull requests
 
 ## Phase 1: SAC and HER at fp32 on FetchReach
 
