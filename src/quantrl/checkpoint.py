@@ -86,9 +86,13 @@ def load_policy(path: str | Path) -> LoadedPolicy:
 
 
 def deterministic_policy_function(actor: torch.nn.Module):
+    reference_parameter = next(actor.parameters())
+
     @torch.no_grad()
     def policy(inputs):
-        tensor_inputs = torch.as_tensor(inputs, dtype=torch.float32)
-        return actor.deterministic_action(tensor_inputs).numpy()
+        tensor_inputs = torch.as_tensor(
+            inputs, dtype=reference_parameter.dtype, device=reference_parameter.device
+        )
+        return actor.deterministic_action(tensor_inputs).float().cpu().numpy()
 
     return policy

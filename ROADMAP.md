@@ -30,10 +30,10 @@ Each phase lands on main through its own pull requests. A box is checked only af
 
 ## Phase 3: quantization module and PTQ
 
-- [ ] Symmetric uniform quantizer, per-tensor and per-channel weights, EMA activation ranges
-- [ ] Straight-through estimator and QuantLinear layer, actor builder for any bit width
-- [ ] Unit tests (integer grid, at most 2^bits values, STE gradients, PTQ at 32 bits equals fp32)
-- [ ] PTQ calibration on observations from the trained policy
+- [x] Symmetric uniform quantizer, per-tensor and per-channel weights, EMA activation ranges
+- [x] Straight-through estimator and QuantLinear layer, actor builder for any bit width
+- [x] Unit tests (integer grid, at most 2^bits values, STE gradients, PTQ at 32 bits equals fp32)
+- [x] PTQ calibration on observations from the trained policy
 - [ ] PTQ evaluation of the Phase 1 policy at 8, 6, 5, 4, 3, 2 bits
 
 ## Phase 4: QAT and the full sweep
