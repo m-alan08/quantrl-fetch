@@ -2,7 +2,7 @@
 
 How few bits does a robot arm policy actually need? This project trains reinforcement learning policies for a simulated Fetch robot arm (MuJoCo, via Gymnasium Robotics) and then squeezes the policy's actor network down to low-bit integer precision: 8 bits, then 6, 5, 4, 3, and 2. It compares three ways of getting a low-bit actor (quantize after training, fine-tune with quantization in the loop, or train with quantization from the start) and later asks whether a post-training stage, behavior cloning followed by online post-training, can win back the performance that quantization costs. The motivation is deployment: a policy that runs on a microcontroller or a small accelerator has to live with low-precision arithmetic, and it is worth knowing where that starts to break a closed-loop controller and what it takes to repair it.
 
-**Status:** Phase 0 (setup, skeleton, CI) is done. Phase 1 (SAC and HER on FetchReach) is next. See [ROADMAP.md](ROADMAP.md).
+**Status:** Phase 0 (setup and skeleton) is done, with CI waiting on a token scope. Phase 1 (SAC and HER on FetchReach) is next. See [ROADMAP.md](ROADMAP.md).
 
 ## Key results
 
