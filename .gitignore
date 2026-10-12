@@ -218,3 +218,22 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# quantrl-fetch project
+.venv/
+.DS_Store
+runs/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+wandb/
+tensorboard/
+tb_logs/
+*.tfevents.*
+logs/
+*.log
+videos/
+MUJOCO_LOG.TXT
+.env
+.env.*
