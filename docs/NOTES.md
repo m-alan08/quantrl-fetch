@@ -101,7 +101,7 @@ Within one training seed, the confidence interval for success rate or return is 
 Quantization replaces a real number with one of a small set of evenly spaced values. This project uses symmetric uniform quantization with `b` bits:
 
 - The integer range is `[-L, L]` with `L = 2^(b-1) - 1`, so 8 bits gives [-127, 127], 4 bits gives [-7, 7], 3 bits gives [-3, 3], and 2 bits gives [-1, 1]. That is `2L + 1 = 2^b - 1` levels, one fewer than `2^b`, because the range is kept symmetric around zero (the value `-2^(b-1)` is unused). Zero is always exactly representable.
-- A scale `s` maps the real range onto the integers: `s = max_abs / L`, where `max_abs` is the largest magnitude the quantizer expects to see.
+- A scale `s` maps the real range onto the integers: `s = max_abs / L`, where `max_abs` is the largest magnitude the quantizer expects to see. The scale is floored at a tiny positive value (1e-8, or the smallest normal number of the tensor's dtype if that is larger, as in float16) so an all-zero tensor quantizes to zeros instead of dividing by zero.
 - Quantize: `q = clamp(round(x / s), -L, L)`, an integer.
 - Dequantize: `x_hat = q * s`.
 
@@ -124,7 +124,7 @@ Each `QuantLinear` quantizes its input, so for the actor the quantized activatio
 
 Unlike weights, activation ranges cannot be read off a fixed tensor, because they depend on the data. `ActivationQuantizer` keeps a scalar `running_max_abs`:
 
-- In training mode, and unless frozen, each batch updates it with an exponential moving average: `running = m * running + (1 - m) * max|x|` with `m = quant.activation_ema_momentum = 0.99`. The very first batch initializes it directly.
+- In training mode, and unless frozen, each batch updates it with an exponential moving average: `running = m * running + (1 - m) * max|x|` with `m = quant.activation_ema_momentum = 0.99`. Values of `m` outside [0, 1] are rejected. The very first batch initializes it directly.
 - In evaluation mode, or after `freeze()`, the range is fixed.
 - During PTQ calibration, the quantizer records the plain maximum of `|x|` over all calibration batches and passes activations through unquantized, then freezes.
 

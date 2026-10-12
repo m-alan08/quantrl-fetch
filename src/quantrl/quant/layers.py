@@ -21,7 +21,9 @@ class ActivationQuantizer(nn.Module):
     def __init__(self, bits: int, ema_momentum: float = 0.99):
         super().__init__()
         self.bits = validate_bits(bits)
-        self.ema_momentum = ema_momentum
+        if not (isinstance(ema_momentum, (int, float)) and 0.0 <= ema_momentum <= 1.0):
+            raise ValueError(f"ema_momentum must be a number in [0, 1], got {ema_momentum!r}")
+        self.ema_momentum = float(ema_momentum)
         self.calibrating = False
         self.register_buffer("running_max_abs", torch.zeros(()))
         self.register_buffer("initialized", torch.zeros((), dtype=torch.bool))

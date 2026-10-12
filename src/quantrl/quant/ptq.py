@@ -41,6 +41,8 @@ def load_full_precision_weights(quantized_actor: GaussianActor, fp32_state: dict
 def calibrate_activation_ranges(
     model: torch.nn.Module, calibration_inputs: np.ndarray | torch.Tensor, batch_size: int = 1024
 ) -> None:
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be positive, got {batch_size}")
     reference_parameter = next(model.parameters())
     inputs = torch.as_tensor(
         calibration_inputs, dtype=reference_parameter.dtype, device=reference_parameter.device

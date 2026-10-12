@@ -3,8 +3,14 @@ import pytest
 import torch
 
 from quantrl.algos.networks import GaussianActor
+from quantrl.checkpoint import deterministic_policy_function
 from quantrl.config import QuantConfig, SACConfig
-from quantrl.quant.layers import ActivationQuantizer, QuantLinear, build_quantized_actor
+from quantrl.quant.layers import (
+    ActivationQuantizer,
+    QuantLinear,
+    activation_quantizers,
+    build_quantized_actor,
+)
 from quantrl.quant.ptq import (
     calibrate_activation_ranges,
     load_full_precision_weights,
@@ -45,6 +51,50 @@ def test_max_quant_level_is_symmetric_signed_range():
 def test_invalid_bit_widths_are_rejected(bits):
     with pytest.raises(ValueError):
         validate_bits(bits)
+
+
+@pytest.mark.parametrize("bits", [32.0, 4.0, 33])
+def test_fake_quantization_validates_bits_before_the_full_precision_shortcut(bits):
+    with pytest.raises(ValueError):
+        fake_quantize(torch.ones(3), torch.tensor(1.0), bits)
+    with pytest.raises(ValueError):
+        fake_quantize_weight(torch.ones(3, 2), bits, per_channel=False)
+
+
+@pytest.mark.parametrize("momentum", [-0.1, 1.5, float("nan"), float("inf"), "0.9"])
+def test_invalid_ema_momentum_is_rejected(momentum):
+    with pytest.raises(ValueError):
+        ActivationQuantizer(8, ema_momentum=momentum)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32, torch.float64])
+def test_all_zero_tensors_quantize_to_zero_without_nans(dtype):
+    weight = torch.zeros(4, 3, dtype=dtype)
+    for per_channel in [False, True]:
+        quantized = fake_quantize_weight(weight, 8, per_channel)
+        assert torch.equal(quantized, weight)
+    quantizer = ActivationQuantizer(8).to(dtype)
+    quantizer.train()
+    assert torch.equal(quantizer(torch.zeros(5, dtype=dtype)), torch.zeros(5, dtype=dtype))
+
+
+@pytest.mark.parametrize("batch_size", [0, -5])
+def test_calibration_rejects_non_positive_batch_size(batch_size):
+    actor = build_quantized_actor(13, 4, SAC_CONFIG, QuantConfig(weight_bits=4, activation_bits=4))
+    with pytest.raises(ValueError):
+        calibrate_activation_ranges(actor, calibration_batch(), batch_size=batch_size)
+    assert not any(q.calibrating for q in activation_quantizers(actor))
+    assert not any(bool(q.frozen) for q in activation_quantizers(actor))
+
+
+def test_policy_wrapper_follows_actor_dtype():
+    fp32_actor = make_fp32_actor().to(torch.float64)
+    quantized_actor = quantize_actor_post_training(
+        fp32_actor, SAC_CONFIG, QuantConfig(weight_bits=8, activation_bits=8), calibration_batch()
+    )
+    actions = deterministic_policy_function(quantized_actor)(calibration_batch(rows=3).numpy())
+    assert actions.shape == (3, 4)
+    assert actions.dtype == np.float32
 
 
 def test_invalid_bit_widths_are_rejected_by_layers():
