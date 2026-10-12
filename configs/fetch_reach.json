@@ -1,0 +1,5 @@
+{
+  "name": "fetch_reach_fp32",
+  "env": {"env_id": "FetchReach-v4"},
+  "train": {"total_steps": 30000, "eval_interval": 2500}
+}
