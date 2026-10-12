@@ -27,5 +27,13 @@ def test_unknown_keys_are_rejected():
         load_config(None, ["sac.not_a_field=1"])
 
 
+@pytest.mark.parametrize("section_value", [None, 3, "fast", [1]])
+def test_non_object_sections_are_rejected(tmp_path, section_value):
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"sac": section_value}))
+    with pytest.raises(TypeError):
+        load_config(path)
+
+
 def test_shipped_configs_load():
     assert load_config("configs/fetch_reach.json").env.env_id == "FetchReach-v4"
