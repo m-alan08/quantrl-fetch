@@ -2,7 +2,7 @@
 
 How few bits does a robot arm policy actually need? This project trains reinforcement learning policies for a simulated Fetch robot arm (MuJoCo, via Gymnasium Robotics) and then squeezes the policy's actor network down to low-bit integer precision: 8 bits, then 6, 5, 4, 3, and 2. It compares three ways of getting a low-bit actor (quantize after training, fine-tune with quantization in the loop, or train with quantization from the start) and later asks whether a post-training stage, behavior cloning followed by online post-training, can win back the performance that quantization costs. The motivation is deployment: a policy that runs on a microcontroller or a small accelerator has to live with low-precision arithmetic, and it is worth knowing where that starts to break a closed-loop controller and what it takes to repair it.
 
-**Status:** Phase 0 (setup) and Phase 1 (SAC and HER at fp32 on FetchReach) are done. Phase 2 (FetchPush) and Phase 3 (quantization) are next. CI is written but not yet active (see the roadmap). See [ROADMAP.md](ROADMAP.md).
+**Status:** Phase 0 (setup) and Phase 1 (SAC and HER at fp32 on FetchReach) are done. The Phase 3 quantization module (quantizer, fake-quant layers, PTQ calibration) is written and tested, and its PTQ evaluation is next, along with Phase 2 (FetchPush). CI is written but not yet active (see the roadmap). See [ROADMAP.md](ROADMAP.md).
 
 ## Key results
 
@@ -32,7 +32,7 @@ A side-by-side clip of an fp32 policy and a low-bit policy, plus the main succes
 2. QAT fine-tuning: train in fp32, then keep training the actor with fake quantization in its forward pass so it can adapt to the rounding.
 3. QAT from scratch: fake quantization is in the actor for the entire training run.
 
-**The quantizer.** Values are mapped to a symmetric uniform grid: divide by a scale, round to the nearest integer, clamp to the range an N-bit signed integer can hold, and multiply back. Weights use a scale from their largest absolute value (per tensor or per output channel), and activations use a range tracked with an exponential moving average during training and frozen for evaluation. Rounding has zero gradient almost everywhere, so training uses a straight-through estimator that treats rounding as the identity in the backward pass.
+**The quantizer.** Values are mapped to a symmetric uniform grid: divide by a scale, round to the nearest integer, clamp to the range an N-bit signed integer can hold, and multiply back. Weights use a scale from their largest absolute value (per tensor or per output channel), and activations use a range tracked with an exponential moving average during training (or the maximum over calibration data for PTQ) and frozen for evaluation. Rounding has zero gradient almost everywhere, so training uses a straight-through estimator that treats rounding as the identity in the backward pass.
 
 **The RL setup.** The agent is Soft Actor-Critic (SAC) with twin Q critics, Polyak-averaged target networks, automatic entropy tuning, and a tanh-squashed Gaussian actor. The Fetch tasks give a sparse reward (success or not), so the replay buffer uses Hindsight Experience Replay (HER) with the future strategy: some stored transitions are relabeled as if the goal had been a position the gripper or object actually reached later in the same episode. Observations, achieved goals, and desired goals are concatenated after running mean and standard deviation normalization with clipping. Only the actor is quantized; the critics stay fp32.
 
@@ -100,6 +100,7 @@ Measured runtime: one seed alone took 90 seconds of training (96 seconds end to 
 - FetchReach is easy (every seed solves it in about 3,000 steps), so it can only reveal large quantization damage. FetchPush is the harder benchmark.
 - Success means ending within 5 cm of the goal, and the trained FetchReach policy ends about 3 cm away on average, so small precision losses can flip successes. Mean final distance is reported alongside success for this reason.
 - Three training seeds give a rough estimate of the spread across seeds.
+- Activations are quantized with a symmetric grid even after ReLU, where they are never negative, so hidden activations effectively lose one bit of resolution. This is most visible at 2 and 3 bits.
 - Quantization here is simulated (fake quantization in fp32 arithmetic). It models the accuracy effect of low-bit weights and activations but does not measure speed or energy on real integer hardware.
 
 ## Roadmap
