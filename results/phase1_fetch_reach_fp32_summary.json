@@ -1,0 +1,44 @@
+[
+  {
+    "env_id": "FetchReach-v4",
+    "method": "fp32",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "success_rate",
+    "n_seeds": 3,
+    "mean": 1.0,
+    "std": 0.0,
+    "min": 1.0,
+    "max": 1.0,
+    "ci_low": 1.0,
+    "ci_high": 1.0
+  },
+  {
+    "env_id": "FetchReach-v4",
+    "method": "fp32",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "mean_return",
+    "n_seeds": 3,
+    "mean": -1.5366666666666668,
+    "std": 0.005773502691896263,
+    "min": -1.54,
+    "max": -1.53,
+    "ci_low": -1.54,
+    "ci_high": -1.53
+  },
+  {
+    "env_id": "FetchReach-v4",
+    "method": "fp32",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "mean_final_distance",
+    "n_seeds": 3,
+    "mean": 0.031481839830638216,
+    "std": 0.0025714256706752636,
+    "min": 0.02919691353321676,
+    "max": 0.03426642472919627,
+    "ci_low": 0.029196913533216757,
+    "ci_high": 0.03426642472919627
+  }
+]
