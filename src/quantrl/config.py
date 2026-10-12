@@ -96,7 +96,11 @@ def _build_dataclass(cls: type, values: dict[str, Any]) -> Any:
     kwargs = {}
     for key, value in values.items():
         default_value = getattr(cls(), key)
-        if dataclasses.is_dataclass(default_value) and isinstance(value, dict):
+        if dataclasses.is_dataclass(default_value):
+            if not isinstance(value, dict):
+                raise TypeError(
+                    f"Section {cls.__name__}.{key} must be an object, got {type(value).__name__}"
+                )
             kwargs[key] = _build_dataclass(type(default_value), value)
         else:
             kwargs[key] = value
