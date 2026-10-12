@@ -17,6 +17,7 @@ dependencies = [
     "matplotlib>=3.8",
     "pandas>=2.2",
     "tqdm>=4.66",
+    "pillow>=10.0",
 ]
 
 [dependency-groups]
@@ -38,6 +39,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"

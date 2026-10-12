@@ -14,13 +14,14 @@ Each phase lands on main through its own pull requests. A box is checked only af
 
 ## Phase 1: SAC and HER at fp32 on FetchReach
 
-- [ ] Environment factory and goal-conditioned observation normalizer
-- [ ] SAC from scratch (twin critics, Polyak targets, automatic entropy tuning, tanh-squashed Gaussian actor)
-- [ ] Episode replay buffer with HER future relabeling
-- [ ] Training loop that saves the resolved config, git commit, seed, and package versions
-- [ ] Deterministic evaluation with bootstrap confidence intervals
-- [ ] FetchReach reaches a success rate near 100 percent on 3 training seeds
-- [ ] Rendered rollout video of the learned policy
+- [x] Environment factory and goal-conditioned observation normalizer
+- [x] SAC from scratch (twin critics, Polyak targets, automatic entropy tuning, tanh-squashed Gaussian actor)
+- [x] Episode replay buffer with HER future relabeling
+- [x] Training loop that saves the resolved config, git commit, seed, and package versions
+- [x] Deterministic evaluation with bootstrap confidence intervals
+- [x] FetchReach reaches a success rate near 100 percent on 3 training seeds (measured: 1.00 on 100 evaluation episodes for each of seeds 0, 1, 2)
+- [x] Rendered rollout video of the learned policy (`assets/fetch_reach_fp32.mp4` and `.gif`)
+- [x] Bitwise reproducibility on CPU checked by a test and by rerunning seed 0
 
 ## Phase 2: FetchPush at fp32
 
