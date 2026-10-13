@@ -72,6 +72,7 @@ def main() -> None:
         ignore_index=True,
     )
     if arguments.summary:
+        Path(arguments.summary).parent.mkdir(parents=True, exist_ok=True)
         summary.to_csv(arguments.summary, index=False)
     print(summary[summary.metric == "success_rate"].to_string(index=False))
 
