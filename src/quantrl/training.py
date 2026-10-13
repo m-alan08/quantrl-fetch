@@ -11,14 +11,16 @@ from typing import Any
 import numpy as np
 import torch
 
-from quantrl.algos.networks import LinearFactory, plain_linear
+from quantrl.algos.networks import LinearFactory
 from quantrl.algos.replay import HindsightReplayBuffer
 from quantrl.algos.sac import UPDATE_METRIC_NAMES, SACAgent
-from quantrl.checkpoint import save_checkpoint
+from quantrl.checkpoint import load_checkpoint, save_checkpoint
 from quantrl.config import RunConfig, save_config
 from quantrl.envs.factory import env_dimensions, make_env
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
+from quantrl.quant.layers import actor_linear_factory, critic_linear_factory
+from quantrl.quant.qat import check_dimensions, initialize_agent_from_checkpoint
 from quantrl.utils.run_info import collect_run_metadata
 from quantrl.utils.seeding import resolve_device, seed_everything
 
@@ -94,7 +96,7 @@ def build_update_batch(buffer, normalizer, batch_size):
 
 def train(
     config: RunConfig,
-    actor_linear_factory: LinearFactory = plain_linear,
+    actor_factory: LinearFactory | None = None,
     verbose: bool = True,
 ) -> dict[str, Any]:
     run_dir = config.run_dir
@@ -138,8 +140,19 @@ def train(
         dimensions.action_dim,
         config.sac,
         device,
-        actor_linear_factory=actor_linear_factory,
+        actor_linear_factory=actor_factory or actor_linear_factory(config.quant),
+        critic_linear_factory=critic_linear_factory(config.quant),
     )
+    calibration_inputs = 0
+    if config.train.init_checkpoint:
+        initial_checkpoint = load_checkpoint(config.train.init_checkpoint)
+        check_dimensions(initial_checkpoint, asdict(dimensions))
+        calibration_inputs = initialize_agent_from_checkpoint(
+            agent, normalizer, initial_checkpoint, config, eval_env
+        )
+    metadata["init_checkpoint"] = config.train.init_checkpoint
+    metadata["calibration_inputs"] = calibration_inputs
+    (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
     def policy(inputs: np.ndarray) -> np.ndarray:
         return agent.act(inputs, deterministic=True)
@@ -167,6 +180,47 @@ def train(
             total_steps,
         )
 
+    def evaluate_and_log() -> None:
+        nonlocal eval_seconds
+        eval_start = time.perf_counter()
+        result, _ = evaluate_policy(
+            eval_env,
+            policy,
+            normalizer,
+            training_eval_seeds,
+            config.eval.bootstrap_resamples,
+            config.eval.confidence,
+        )
+        eval_seconds += time.perf_counter() - eval_start
+        row = {
+            "step": total_steps,
+            "episodes": episodes,
+            "wall_seconds": round(time.perf_counter() - start_time, 2),
+            "train_success": float(np.mean(recent_train_success))
+            if recent_train_success
+            else float("nan"),
+            **{f"eval_{key}": value for key, value in result.to_dict().items()},
+            **{
+                key: float(np.mean(recent_metrics[key])) if recent_metrics[key] else float("nan")
+                for key in UPDATE_METRIC_NAMES
+            },
+        }
+        progress.write(row)
+        if verbose:
+            print(
+                f"[{config.name} seed {config.seed}] step {total_steps:>7d} "
+                f"eval success {result.success_rate:.2f} "
+                f"return {result.mean_return:7.2f} "
+                f"alpha {row['alpha']:.4f} "
+                f"time {row['wall_seconds']:.0f}s",
+                flush=True,
+            )
+        recent_metrics.clear()
+        recent_train_success.clear()
+
+    if config.train.eval_at_start:
+        evaluate_and_log()
+
     while total_steps < config.train.total_steps:
         use_random_actions = total_steps < config.train.random_steps
         observations, achieved, desired, actions, success = collect_episode(
@@ -189,41 +243,7 @@ def train(
             next_checkpoint_step += config.train.checkpoint_interval
 
         if total_steps >= next_eval_step or total_steps >= config.train.total_steps:
-            eval_start = time.perf_counter()
-            result, _ = evaluate_policy(
-                eval_env,
-                policy,
-                normalizer,
-                training_eval_seeds,
-                config.eval.bootstrap_resamples,
-                config.eval.confidence,
-            )
-            eval_seconds += time.perf_counter() - eval_start
-            row = {
-                "step": total_steps,
-                "episodes": episodes,
-                "wall_seconds": round(time.perf_counter() - start_time, 2),
-                "train_success": float(np.mean(recent_train_success)),
-                **{f"eval_{key}": value for key, value in result.to_dict().items()},
-                **{
-                    key: float(np.mean(recent_metrics[key]))
-                    if recent_metrics[key]
-                    else float("nan")
-                    for key in UPDATE_METRIC_NAMES
-                },
-            }
-            progress.write(row)
-            if verbose:
-                print(
-                    f"[{config.name} seed {config.seed}] step {total_steps:>7d} "
-                    f"eval success {result.success_rate:.2f} "
-                    f"return {result.mean_return:7.2f} "
-                    f"alpha {row.get('alpha', float('nan')):.4f} "
-                    f"time {row['wall_seconds']:.0f}s",
-                    flush=True,
-                )
-            recent_metrics.clear()
-            recent_train_success.clear()
+            evaluate_and_log()
             next_eval_step += config.train.eval_interval
 
     train_seconds = time.perf_counter() - start_time

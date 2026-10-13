@@ -6,9 +6,10 @@ from typing import Any
 
 import torch
 
-from quantrl.algos.networks import GaussianActor, LinearFactory, plain_linear
+from quantrl.algos.networks import GaussianActor, LinearFactory
 from quantrl.config import RunConfig, config_from_dict
 from quantrl.envs.normalizer import GoalObservationNormalizer
+from quantrl.quant.layers import actor_linear_factory
 
 
 @dataclass
@@ -47,10 +48,12 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
 
 
 def build_actor_from_checkpoint(
-    checkpoint: dict[str, Any], linear_factory: LinearFactory = plain_linear
+    checkpoint: dict[str, Any], linear_factory: LinearFactory | None = None
 ) -> GaussianActor:
     config = config_from_dict(checkpoint["config"])
     dimensions = checkpoint["dimensions"]
+    if linear_factory is None:
+        linear_factory = actor_linear_factory(config.quant)
     actor = GaussianActor(
         dimensions["observation_dim"] + dimensions["goal_dim"],
         dimensions["action_dim"],

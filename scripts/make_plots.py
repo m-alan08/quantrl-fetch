@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from quantrl.sweep import baseline_rows_for_methods
 from quantrl.viz.plots import load_progress, plot_success_vs_bits, plot_training_curves
 
 TARGET_LABELS = {
@@ -13,12 +14,18 @@ TARGET_LABELS = {
     "activations": "activations only",
 }
 GRANULARITY_LABELS = {"per_tensor": "per-tensor", "per_channel": "per-channel"}
+METHOD_LABELS = {
+    "ptq": "PTQ",
+    "qat_finetune": "QAT fine-tune",
+    "qat_scratch": "QAT from scratch",
+}
 
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Plot training curves or bit-width sweeps.")
     parser.add_argument("--runs", nargs="+", default=None, help="Run directories for curves")
     parser.add_argument("--ptq-csv", default=None, help="Per-seed CSV from evaluate_ptq.py")
+    parser.add_argument("--sweep-csv", default=None, help="Per-seed CSV from sweep.py")
     parser.add_argument(
         "--targets", nargs="+", default=None, help="Quantization targets to include"
     )
@@ -49,9 +56,20 @@ def plot_ptq(arguments: argparse.Namespace) -> None:
     plot_success_vs_bits(frame, arguments.out, arguments.title, "series", present)
 
 
+def plot_sweep(arguments: argparse.Namespace) -> None:
+    frame = pd.read_csv(arguments.sweep_csv)
+    methods = [method for method in METHOD_LABELS if method in set(frame["method"])]
+    expanded = pd.DataFrame(baseline_rows_for_methods(frame.to_dict("records"), methods))
+    expanded = expanded.assign(series=expanded["method"].map(METHOD_LABELS))
+    order = [METHOD_LABELS[method] for method in methods]
+    plot_success_vs_bits(expanded, arguments.out, arguments.title, "series", order)
+
+
 def main() -> None:
     arguments = parse_arguments()
-    if arguments.ptq_csv:
+    if arguments.sweep_csv:
+        plot_sweep(arguments)
+    elif arguments.ptq_csv:
         plot_ptq(arguments)
     elif arguments.runs:
         progress = load_progress(arguments.runs)
@@ -60,7 +78,7 @@ def main() -> None:
             Path(arguments.csv).parent.mkdir(parents=True, exist_ok=True)
             progress.to_csv(arguments.csv, index=False)
     else:
-        raise SystemExit("Pass --runs for training curves or --ptq-csv for a bit-width plot")
+        raise SystemExit("Pass --runs, --ptq-csv, or --sweep-csv")
     print(f"wrote {arguments.out}")
 
 

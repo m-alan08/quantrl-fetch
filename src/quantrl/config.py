@@ -18,6 +18,7 @@ class EnvConfig:
 
 @dataclass
 class QuantConfig:
+    method: str = "fp32"
     weight_bits: int = 32
     activation_bits: int = 32
     per_channel_weights: bool = False
@@ -56,6 +57,8 @@ class TrainConfig:
     eval_interval: int = 2_500
     eval_episodes: int = 50
     checkpoint_interval: int = 0
+    init_checkpoint: str | None = None
+    eval_at_start: bool = False
 
 
 @dataclass
