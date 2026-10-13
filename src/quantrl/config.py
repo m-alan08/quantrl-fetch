@@ -62,6 +62,8 @@ class TrainConfig:
 class EvalConfig:
     episodes: int = 100
     seed_offset: int = 1_000_000
+    calibration_seed_offset: int = 2_000_000
+    calibration_episodes: int = 20
     bootstrap_resamples: int = 10_000
     confidence: float = 0.95
 
