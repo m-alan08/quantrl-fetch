@@ -81,5 +81,66 @@ def plot_training_curves(
     plt.close(figure)
 
 
-def plot_success_vs_bits(*args, **kwargs):
-    raise NotImplementedError("plot_success_vs_bits is planned for Phase 4, see ROADMAP.md")
+def bit_width_label(bits: int) -> str:
+    return "fp32" if bits >= 32 else str(bits)
+
+
+def plot_success_vs_bits(
+    per_seed: pd.DataFrame,
+    output_path: str | Path,
+    title: str,
+    series_column: str = "series",
+    series_order: Sequence[str] | None = None,
+    metrics: Sequence[tuple[str, str, float]] = (
+        ("success_rate", "Success rate", 1.0),
+        ("mean_final_distance", "Final distance to goal (cm)", 100.0),
+    ),
+    success_radius_cm: float | None = 5.0,
+) -> None:
+    apply_style()
+    bit_widths = sorted(per_seed["bits"].unique(), reverse=True)
+    positions = {bits: index for index, bits in enumerate(bit_widths)}
+    series_names = list(series_order or sorted(per_seed[series_column].unique()))
+    figure, axes = plt.subplots(1, len(metrics), figsize=(5.4 * len(metrics), 3.9))
+    axes = [axes] if len(metrics) == 1 else list(axes)
+    n_seeds = per_seed["seed"].nunique()
+    for axis, (column, label, multiplier) in zip(axes, metrics, strict=True):
+        for color, series in zip(PALETTE, series_names, strict=False):
+            frame = per_seed[per_seed[series_column] == series]
+            grouped = frame.groupby("bits")[column]
+            bits = sorted(grouped.groups, reverse=True)
+            x = [positions[value] for value in bits]
+            mean = grouped.mean().reindex(bits).to_numpy() * multiplier
+            low = grouped.min().reindex(bits).to_numpy() * multiplier
+            high = grouped.max().reindex(bits).to_numpy() * multiplier
+            axis.fill_between(x, low, high, color=color, alpha=0.15, linewidth=0)
+            axis.plot(x, mean, color=color, linewidth=2, marker="o", markersize=4, label=series)
+        axis.set_xticks(range(len(bit_widths)))
+        axis.set_xticklabels([bit_width_label(bits) for bits in bit_widths])
+        axis.set_xlabel("Bit width")
+        axis.set_ylabel(label)
+        if column == "success_rate":
+            axis.set_ylim(-0.03, 1.03)
+        if column == "mean_final_distance" and success_radius_cm is not None:
+            axis.axhline(success_radius_cm, color="#6b7280", linestyle="--", linewidth=1)
+            axis.annotate(
+                "success radius",
+                (0, success_radius_cm),
+                xytext=(2, 3),
+                textcoords="offset points",
+                color="#6b7280",
+                fontsize=9,
+            )
+    handles, labels = axes[0].get_legend_handles_labels()
+    figure.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=min(len(labels), 3),
+        bbox_to_anchor=(0.5, -0.02),
+    )
+    figure.suptitle(f"{title}\nlines: mean of {n_seeds} training seeds, shading: min to max")
+    figure.tight_layout(rect=(0, 0.06 * ((len(labels) + 2) // 3), 1, 1))
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path)
+    plt.close(figure)

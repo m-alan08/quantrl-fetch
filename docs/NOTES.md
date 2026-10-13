@@ -27,6 +27,7 @@ This file explains how the code is organized and why. It is updated in the same 
 | `src/quantrl/training.py` | The training loop: collect an episode, store it, update the normalizer, run gradient updates, evaluate periodically, save checkpoints and logs. |
 | `src/quantrl/checkpoint.py` | Saving and loading checkpoints, rebuilding the actor and normalizer, and wrapping the actor as a deterministic policy function. |
 | `src/quantrl/eval/evaluate.py` | Deterministic evaluation on a fixed list of environment seeds. |
+| `src/quantrl/eval/quantized.py` | PTQ evaluation grid: `PTQSetting` (bit width, what to quantize, weight granularity) and `evaluate_ptq_settings`, which calibrates once per checkpoint and evaluates every setting on the fixed evaluation seeds. |
 | `src/quantrl/eval/stats.py` | Percentile bootstrap confidence intervals and aggregation across training seeds. |
 | `src/quantrl/viz/video.py` | Rendering labeled evaluation episodes and writing mp4 and gif files. |
 | `src/quantrl/viz/plots.py` | Shared plot style and training curves across seeds. |
@@ -38,7 +39,8 @@ This file explains how the code is organized and why. It is updated in the same 
 | `src/quantrl/quant/qat.py` | Stub for Phase 4. |
 | `scripts/train.py` | Trains one or more seeds from a config file with optional overrides. |
 | `scripts/evaluate.py` | Evaluates checkpoints and writes a tidy per-seed CSV and a JSON summary across seeds. |
-| `scripts/make_plots.py` | Plots training curves for a set of run directories. |
+| `scripts/evaluate_ptq.py` | Runs the PTQ grid for a set of checkpoints and writes a tidy per-seed CSV and a summary CSV across seeds. |
+| `scripts/make_plots.py` | Plots training curves (`--runs`) or success and final distance versus bit width (`--ptq-csv`). |
 | `scripts/make_video.py` | Renders labeled evaluation episodes of a checkpoint to mp4 and gif. |
 | `scripts/sweep.py` | Stub for Phase 4. |
 | `configs/` | JSON run configs. Any field not given keeps its dataclass default. |
@@ -155,7 +157,19 @@ and its gradient with respect to `x` is 1 where `x` is inside `[-L * s, L * s]` 
 3. Run the calibration inputs through it with every activation quantizer in calibration mode, then freeze the ranges (`calibrate_activation_ranges`). An empty calibration set raises an error before any range is touched, rather than silently leaving activations unquantized. The quantized actor is created on the same device and dtype as the fp32 actor.
 4. Evaluate it like any other policy.
 
+Calibration episodes use seeds starting at `eval.calibration_seed_offset` (2,000,000), and there are `eval.calibration_episodes` of them (20, which gives 1,000 inputs for 50-step episodes). These seeds never overlap the evaluation seeds (starting at 1,000,000), so the quantization ranges are not fitted to the exact episodes they are scored on.
+
+The PTQ evaluation grid has three targets: `both` (weights and activations at N bits), `weights` (weights at N bits, activations fp32), and `activations` (activations at N bits, weights fp32). Weight scales can be per tensor or per channel. Separating the targets shows which part of the network is the bottleneck.
+
 All activation ranges are calibrated in a single pass over fp32 activations, so a later layer's range is measured on activations that were not yet quantized upstream. A test checks that PTQ at 32 bits gives bitwise identical outputs to the fp32 actor, and a check on the trained FetchReach checkpoint confirmed identical actions on 1,000 real calibration inputs.
+
+### What PTQ on FetchReach showed
+
+Measured on the 3 Phase 1 seeds (full numbers in the README and `results/`):
+
+- No loss at 8 and 6 bits, a few points at most at 5 bits, about 85 percent success at 4 bits with weights and activations quantized, and failure at 2 bits.
+- Weights alone are robust down to 4 bits, and down to 3 bits with per-channel scales. Activations alone cause most of the loss at 4 and 3 bits.
+- The calibrated input range of the first layer is about plus or minus 2.4 to 2.6 standard deviations, so a 4-bit grid (7 positive levels) has a step of about 0.35 standard deviations, which is about 3 cm of gripper or goal position. That is the same scale as the policy's typical final distance (3.1 cm) and the 5 cm success radius, which makes input quantization a plausible cause of the 4-bit drop. It has not been isolated experimentally. A direct test would keep the first layer's input in higher precision.
 
 ## Design decisions
 

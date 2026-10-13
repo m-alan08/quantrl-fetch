@@ -2,11 +2,37 @@
 
 How few bits does a robot arm policy actually need? This project trains reinforcement learning policies for a simulated Fetch robot arm (MuJoCo, via Gymnasium Robotics) and then squeezes the policy's actor network down to low-bit integer precision: 8 bits, then 6, 5, 4, 3, and 2. It compares three ways of getting a low-bit actor (quantize after training, fine-tune with quantization in the loop, or train with quantization from the start) and later asks whether a post-training stage, behavior cloning followed by online post-training, can win back the performance that quantization costs. The motivation is deployment: a policy that runs on a microcontroller or a small accelerator has to live with low-precision arithmetic, and it is worth knowing where that starts to break a closed-loop controller and what it takes to repair it.
 
-**Status:** Phase 0 (setup) and Phase 1 (SAC and HER at fp32 on FetchReach) are done. The Phase 3 quantization module (quantizer, fake-quant layers, PTQ calibration) is written and tested, and its PTQ evaluation is next, along with Phase 2 (FetchPush). See [ROADMAP.md](ROADMAP.md).
+**Status:** Phase 0 (setup) and Phase 1 (SAC and HER at fp32 on FetchReach) are done. Phase 3 (quantizer and post-training quantization of the FetchReach actor) is done. Phase 2 (FetchPush) is in progress. See [ROADMAP.md](ROADMAP.md).
 
 ## Key results
 
-The quantization results are pending. What has been measured so far is the fp32 baseline:
+**Post-training quantization (PTQ) on FetchReach.** The fp32 actors from the 3 training seeds were quantized after training and evaluated on the same 100 episodes as the baseline. Entries are success rate in percent: mean over the 3 seeds, with the lowest and highest seed in parentheses.
+
+| Bits | Weights and activations, per-tensor | Weights and activations, per-channel | Weights only, per-tensor | Weights only, per-channel | Activations only |
+| --- | --- | --- | --- | --- | --- |
+| fp32 | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) |
+| 8 | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) |
+| 6 | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) | 100.0 (100 to 100) |
+| 5 | 99.7 (99 to 100) | 97.7 (95 to 99) | 100.0 (100 to 100) | 100.0 (100 to 100) | 99.3 (99 to 100) |
+| 4 | 85.0 (82 to 89) | 82.0 (79 to 86) | 100.0 (100 to 100) | 100.0 (100 to 100) | 86.0 (84 to 89) |
+| 3 | 12.3 (3 to 19) | 43.0 (38 to 47) | 47.0 (20 to 79) | 99.3 (98 to 100) | 38.7 (27 to 47) |
+| 2 | 0.0 (0 to 0) | 0.0 (0 to 0) | 0.0 (0 to 0) | 0.0 (0 to 0) | 3.3 (1 to 5) |
+
+What this shows so far:
+
+- 8 and 6 bits cost nothing measurable, and 5 bits costs at most a few points.
+- At 4 bits the damage comes from activations, not weights: quantizing only the weights to 4 bits keeps 100 percent success, while quantizing only the activations drops it to 86 percent.
+- Per-channel weight scales matter at 3 bits: weights-only PTQ keeps 99.3 percent with per-channel scales but falls to 47 percent with per-tensor scales.
+- 2 bits fails in every setting.
+- A likely reason activations are the bottleneck: the first layer's input is the normalized observation and goal, and at 4 bits the calibrated input grid has a step of about 3 cm in gripper and goal position (measured on all 3 seeds). The fp32 policy ends episodes about 3 cm from the goal and success requires 5 cm, so rounding on that scale can push it out of the success radius. This is a hypothesis consistent with the numbers, not a tested cause.
+
+![PTQ success versus bit width on FetchReach](assets/fetch_reach_ptq_bits.png)
+
+![PTQ ablation: weights only, activations only, both](assets/fetch_reach_ptq_ablation.png)
+
+Raw numbers: [results/phase3_fetch_reach_ptq.csv](results/phase3_fetch_reach_ptq.csv) (per seed) and [results/phase3_fetch_reach_ptq_summary.csv](results/phase3_fetch_reach_ptq_summary.csv) (across seeds, also return and final distance). QAT and the comparison across all three methods come in Phase 4.
+
+**fp32 baseline.**
 
 | Task | Precision | Training seeds | Success rate (mean, min to max over seeds) | Mean return | Mean final distance to goal |
 | --- | --- | --- | --- | --- | --- |
@@ -92,7 +118,17 @@ uv run python scripts/make_plots.py --runs runs/fetch_reach_fp32_seed{0,1,2} --o
 uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/checkpoint.pt --episodes 4 --out assets/fetch_reach_fp32.mp4 --gif assets/fetch_reach_fp32.gif
 ```
 
-Measured runtime: one seed alone took 90 seconds of training (96 seconds end to end including the final 100-episode evaluation). Three seeds run as parallel processes took 104 to 105 seconds each. Rendering the four-episode video took under 5 seconds. Passing several seeds to one `train.py` call runs them one after another; launching one process per seed runs them in parallel.
+**Phase 3, PTQ of the FetchReach actors** (uses the Phase 1 checkpoints; calibration on 20 episodes with seeds starting at 2,000,000, disjoint from the evaluation seeds):
+
+```bash
+uv run python scripts/evaluate_ptq.py --checkpoints runs/fetch_reach_fp32_seed{0,1,2}/checkpoint.pt --targets both weights activations --granularity per_tensor per_channel --out results/phase3_fetch_reach_ptq.csv --summary results/phase3_fetch_reach_ptq_summary.csv
+uv run python scripts/make_plots.py --ptq-csv results/phase3_fetch_reach_ptq.csv --targets both --out assets/fetch_reach_ptq_bits.png --title "Post-training quantization of the FetchReach actor"
+uv run python scripts/make_plots.py --ptq-csv results/phase3_fetch_reach_ptq.csv --out assets/fetch_reach_ptq_ablation.png --title "PTQ on FetchReach: what is being quantized"
+```
+
+The PTQ evaluation (3 seeds, 7 bit widths, 5 settings, 100 episodes each) took 8 minutes 22 seconds, measured while five FetchPush training runs were sharing the CPU, so it should be faster on an idle machine.
+
+Measured runtime for Phase 1: one seed alone took 90 seconds of training (96 seconds end to end including the final 100-episode evaluation). Three seeds run as parallel processes took 104 to 105 seconds each. Rendering the four-episode video took under 5 seconds. Passing several seeds to one `train.py` call runs them one after another; launching one process per seed runs them in parallel.
 
 ## Limitations and caveats
 

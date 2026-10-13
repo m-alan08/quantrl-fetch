@@ -34,7 +34,7 @@ Each phase lands on main through its own pull requests. A box is checked only af
 - [x] Straight-through estimator and QuantLinear layer, actor builder for any bit width
 - [x] Unit tests (integer grid, at most 2^bits values, STE gradients, PTQ at 32 bits equals fp32)
 - [x] PTQ calibration on observations from the trained policy
-- [ ] PTQ evaluation of the Phase 1 policy at 8, 6, 5, 4, 3, 2 bits
+- [x] PTQ evaluation of the Phase 1 policy at 8, 6, 5, 4, 3, 2 bits (3 seeds, plus weights-only, activations-only, and per-channel ablations)
 
 ## Phase 4: QAT and the full sweep
 
