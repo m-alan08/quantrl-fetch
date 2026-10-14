@@ -57,6 +57,7 @@ def evaluate_ptq_settings(
     loaded: LoadedPolicy,
     settings: Sequence[PTQSetting],
     episodes: int | None = None,
+    seeds: Sequence[int] | None = None,
 ) -> list[dict[str, Any]]:
     config = loaded.config
     env = make_env(config.env)
@@ -67,7 +68,8 @@ def evaluate_ptq_settings(
             loaded.normalizer,
             evaluation_seeds(config.eval.calibration_seed_offset, config.eval.calibration_episodes),
         )
-        seeds = evaluation_seeds(config.eval.seed_offset, episodes or config.eval.episodes)
+        if seeds is None:
+            seeds = evaluation_seeds(config.eval.seed_offset, episodes or config.eval.episodes)
         rows = []
         for setting in settings:
             quant_config = setting.quant_config(config.quant)

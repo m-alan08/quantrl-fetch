@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from quantrl.algos.networks import GaussianActor, LinearFactory
+from quantrl.algos.networks import GaussianActor, LinearFactory, plain_linear
 from quantrl.config import QuantConfig, SACConfig
 from quantrl.quant.quantizer import (
     fake_quantize,
@@ -126,6 +126,25 @@ def quant_linear_factory(quant_config: QuantConfig) -> LinearFactory:
         )
 
     return factory
+
+
+def uses_quantization(quant_config: QuantConfig) -> bool:
+    return not (
+        is_full_precision(validate_bits(quant_config.weight_bits))
+        and is_full_precision(validate_bits(quant_config.activation_bits))
+    )
+
+
+def actor_linear_factory(quant_config: QuantConfig) -> LinearFactory:
+    if uses_quantization(quant_config):
+        return quant_linear_factory(quant_config)
+    return plain_linear
+
+
+def critic_linear_factory(quant_config: QuantConfig) -> LinearFactory:
+    if quant_config.quantize_critics and uses_quantization(quant_config):
+        return quant_linear_factory(quant_config)
+    return plain_linear
 
 
 def build_quantized_actor(

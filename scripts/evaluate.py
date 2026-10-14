@@ -46,7 +46,7 @@ def main() -> None:
             "seed": config.seed,
             "weight_bits": config.quant.weight_bits,
             "activation_bits": config.quant.activation_bits,
-            "method": "fp32",
+            "method": config.quant.method,
             **result.to_dict(),
         }
         rows.append(row)

@@ -1,0 +1,4 @@
+env_id,name,seed,weight_bits,activation_bits,method,episodes,success_rate,success_ci_low,success_ci_high,mean_return,return_ci_low,return_ci_high,mean_final_distance
+FetchReach-v4,fetch_reach_fp32_finetune_control,0,32,32,fp32_finetune,100,1.0,1.0,1.0,-1.53,-1.71,-1.35,0.009688251513148524
+FetchReach-v4,fetch_reach_fp32_finetune_control,1,32,32,fp32_finetune,100,1.0,1.0,1.0,-1.53,-1.71,-1.35,0.01153827466679152
+FetchReach-v4,fetch_reach_fp32_finetune_control,2,32,32,fp32_finetune,100,1.0,1.0,1.0,-1.53,-1.71,-1.35,0.0064231454700796695

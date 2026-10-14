@@ -221,6 +221,7 @@ __marimo__/
 
 # quantrl-fetch project
 .venv/
+.venv.nosync/
 .DS_Store
 runs/
 checkpoints/

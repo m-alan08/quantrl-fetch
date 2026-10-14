@@ -11,7 +11,7 @@ This file explains how the code is organized and why. It is updated in the same 
 - Rewards: `env.unwrapped.compute_reward(achieved_goal, desired_goal, info)` is vectorized over a batch, which HER relabeling relies on. The sparse reward is 0 when the goal is within 5 cm and -1 otherwise.
 - Importing gymnasium_robotics prints a notice about Adroit environments. It does not affect the Fetch tasks.
 - CI installs the CPU-only torch wheel on Linux through a uv index rule in `pyproject.toml`, which avoids downloading CUDA packages.
-- Hidden `.venv` on macOS: in the development checkout under `~/Documents`, every file inside `.venv` ended up with the macOS `hidden` file flag. Python 3.12.14 deliberately skips hidden `.pth` files, so the editable install of `quantrl` silently stopped being importable (`ModuleNotFoundError: No module named 'quantrl'`). A fresh clone in another directory did not show the problem. The fix is `chflags -R nohidden .venv`. As a second line of defense, pytest adds `src` to `sys.path` through `pythonpath = ["src"]` in `pyproject.toml`.
+- Hidden `.venv` on macOS: in the development checkout under `~/Documents`, every file inside `.venv` ended up with the macOS `hidden` file flag. Python 3.12.14 deliberately skips hidden `.pth` files, so the editable install of `quantrl` silently stopped being importable (`ModuleNotFoundError: No module named 'quantrl'`). A fresh clone in another directory did not show the problem. The fix is `chflags -R nohidden .venv`. The flag kept coming back within an hour, and `~/Documents` on the development Mac is synced by iCloud Drive, which is the likely cause. iCloud skips anything whose name ends in `.nosync`, so the development checkout keeps its environment in `.venv.nosync` with a `.venv` symlink pointing to it; uv follows the symlink. As a second line of defense, pytest adds `src` to `sys.path` through `pythonpath = ["src"]` in `pyproject.toml`.
 
 ## Module map
 
@@ -36,13 +36,14 @@ This file explains how the code is organized and why. It is updated in the same 
 | `src/quantrl/quant/quantizer.py` | Pure functions: bit-width validation, scales, integer quantization, fake quantization with the straight-through estimator. |
 | `src/quantrl/quant/layers.py` | `ActivationQuantizer` (range tracking and fake quantization of a layer input), `QuantLinear` (a drop-in `nn.Linear` with quantized weights and inputs), and `build_quantized_actor`. |
 | `src/quantrl/quant/ptq.py` | Post-training quantization: copy fp32 weights into a quantized actor, calibrate activation ranges, and collect calibration inputs by running a policy. |
-| `src/quantrl/quant/qat.py` | Stub for Phase 4. |
+| `src/quantrl/quant/qat.py` | QAT fine-tuning setup: loads a trained agent into a quantized one, applies the configured learning rates, and calibrates activation ranges the same way PTQ does. |
+| `src/quantrl/sweep.py` | The bit width by method sweep: builds QAT run configs, trains them in parallel worker processes (reusing finished runs), and evaluates fp32, PTQ, and QAT actors on the same episodes. |
 | `scripts/train.py` | Trains one or more seeds from a config file with optional overrides. |
 | `scripts/evaluate.py` | Evaluates checkpoints and writes a tidy per-seed CSV and a JSON summary across seeds. |
 | `scripts/evaluate_ptq.py` | Runs the PTQ grid for a set of checkpoints and writes a tidy per-seed CSV and a summary CSV across seeds. |
-| `scripts/make_plots.py` | Plots training curves (`--runs`) or success and final distance versus bit width (`--ptq-csv`). |
-| `scripts/make_video.py` | Renders labeled evaluation episodes of a checkpoint to mp4 and gif. |
-| `scripts/sweep.py` | Stub for Phase 4. |
+| `scripts/make_plots.py` | Plots training curves (`--runs`), the PTQ grid (`--ptq-csv`), or the method comparison (`--sweep-csv`). |
+| `scripts/make_video.py` | Renders labeled evaluation episodes of a checkpoint to mp4 and gif, or two policies side by side on the same episodes (`--compare-checkpoint`, or `--compare-ptq-bits` for a PTQ copy of the same actor). |
+| `scripts/sweep.py` | Runs the sweep and writes a tidy per-seed CSV, a summary across seeds, and per-run training times. |
 | `configs/` | JSON run configs. Any field not given keeps its dataclass default. |
 | `results/` | Small CSV and JSON metric files that are committed. |
 | `assets/` | A few small clips and plots used by the README. |
@@ -183,6 +184,45 @@ Measured on the 3 Phase 1 seeds (full numbers in the README and `results/`):
 - No loss at 8 and 6 bits, a few points at most at 5 bits, about 85 percent success at 4 bits with weights and activations quantized, and failure at 2 bits.
 - Weights alone are robust down to 4 bits, and down to 3 bits with per-channel scales. Activations alone cause most of the loss at 4 and 3 bits.
 - The calibrated input range of the first layer is about plus or minus 2.4 to 2.6 standard deviations, so a 4-bit grid (7 positive levels) has a step of about 0.35 standard deviations, which is about 3 cm of gripper or goal position. That is the same scale as the policy's typical final distance (3.1 cm) and the 5 cm success radius, which makes input quantization a plausible cause of the 4-bit drop. It has not been isolated experimentally. A direct test would keep the first layer's input in higher precision.
+
+### Quantization-aware training (QAT)
+
+QAT keeps the fake quantizers in the actor while it trains, so the optimizer sees the rounded network and can move the weights to places where rounding hurts less. The straight-through estimator described above is what lets gradients pass through the rounding. The quantized actor is built through the same `linear_factory` hook as for PTQ, chosen automatically from `config.quant` by `actor_linear_factory`. `quant.method` records which method a run used (`fp32`, `ptq`, `qat_finetune`, `qat_scratch`) and only labels results; the bit widths are what change the network.
+
+During training, the actor runs in two modes. Inside gradient updates it is in training mode, so each batch of replayed inputs updates the activation ranges by exponential moving average. When acting in the environment or being evaluated it is switched to evaluation mode (`evaluation_mode` in `algos/sac.py`), so ranges never move on single observations. For an fp32 actor the two modes compute exactly the same thing, so this does not change Phase 1 runs; a rerun of seed 0 reproduced its progress log exactly.
+
+**QAT from scratch** (`quant.method = qat_scratch`) trains with the same config, budget (30,000 steps for FetchReach), and seeds as the fp32 baseline, only with a quantized actor. Weights are fake-quantized from the first update. Activation ranges start unset, so the very first acting steps pass activations through unquantized; the first gradient update initializes every range and from then on the actor is fully quantized.
+
+**QAT fine-tuning** (`quant.method = qat_finetune`, with `train.init_checkpoint` pointing at a trained fp32 run) starts from the trained agent:
+
+1. Load the fp32 actor weights into the quantized actor, plus the critics, target critics, temperature, optimizer states, and normalizer.
+2. Calibrate the actor's activation ranges on the same calibration episodes PTQ uses, then unfreeze them so the moving average can follow the data. At step 0 the fine-tuned actor is therefore exactly the PTQ actor (a test checks this), and `train.eval_at_start` logs that starting point.
+3. Continue SAC with a fresh replay buffer: no random actions, 1,000 steps of data from the quantized policy before the first update, then 10,000 environment steps in total.
+
+The recipe uses an actor learning rate of 1e-4 (ten times lower than training) and a frozen temperature (`sac.alpha_lr = 0`). In pilot runs on seed 0 (scored on the 50 periodic evaluation episodes), the training learning rate made the 3-bit actor fall from 46 percent (its PTQ starting point) to about 20 percent while the temperature drifted upward. With the lower learning rate and frozen temperature it stayed between 28 and 54 percent over 10,000 steps, and 4 bits went from 78 to 100 percent within 1,000 steps either way.
+
+One bug found on the way: `torch.optim.Optimizer.load_state_dict` also restores the saved learning rate, so a fine-tuning run silently used the old learning rates no matter what the config said. `apply_configured_learning_rates` now resets them after loading, and a test checks it.
+
+### The sweep
+
+`scripts/sweep.py` runs every combination of method and bit width for each fp32 training seed. Each QAT run's seed matches the fp32 seed it came from (fine-tuning) or uses the same seed as that baseline (from scratch). Runs go to worker processes, one torch thread each, and a run whose `summary.json` already exists is reused rather than retrained, so an interrupted sweep can be resumed. Afterwards every actor (fp32, PTQ copies of each fp32 actor, and every QAT actor) is evaluated on the same 100 evaluation episodes. Weights use per-channel scales in the sweep unless `--per-tensor` is passed, since PTQ showed per-channel scales are at least as good at 3 bits and above.
+
+In the plot, the fp32 result is drawn as the leftmost point of every method's line so each line starts from the same reference.
+
+### Side-by-side video
+
+`compose_side_by_side` places two equally sized frame sequences next to each other with an 8-pixel divider (keeping the width a multiple of 8, which video encoders prefer). Both policies are rendered on the same environment seeds, so they see the same goal; each episode is 51 frames plus a short hold on the last frame, so the two sides stay in step. Labels show the policy (for example "fp32" or "3-bit PTQ") and success or failure on the last frame.
+
+### What the method comparison showed
+
+On FetchReach (3 seeds, per-channel weights, details and numbers in the README):
+
+- QAT fine-tuning brought 4 and 5 bits to 100 percent success on every seed, from 82 and 98 percent with PTQ. On the 4-bit episodes that PTQ fails for seed 0, the fine-tuned actor succeeded on every one of the first 12.
+- QAT from scratch reached 96 percent at 4 bits with the same budget as the fp32 baseline.
+- At 3 bits no method passed about 50 percent. The fine-tuned actor stays close to its PTQ starting point instead of improving, which is what an input-resolution limit would predict: the step of a 3-bit input grid is roughly twice the 4-bit step of about 3 cm, so the actor cannot tell apart goals that the task needs it to tell apart, no matter how its weights are trained. A direct test would keep the first layer's input at higher precision.
+- Fine-tuning improves final precision for every bit width, but the fp32 fine-tuning control shows that most of that comes from the extra training: the fp32 actor fine-tuned with the same recipe ends 0.9 cm from the goal on average, against 3.1 cm before fine-tuning.
+
+On FetchPush, PTQ collapses earlier: 95 percent at 6 bits, 83 at 5, 15 at 4, and the do-nothing floor of 8 percent at 3 and 2 bits. Weights alone at 4 bits keep 87 percent, so activations are again the main problem. Pushing a block needs finer control than reaching a point, which fits the larger sensitivity.
 
 ## Design decisions
 

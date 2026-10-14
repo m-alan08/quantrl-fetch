@@ -129,5 +129,30 @@ def write_gif(
     )
 
 
-def compose_side_by_side(*args, **kwargs):
-    raise NotImplementedError("compose_side_by_side is planned for Phase 4, see ROADMAP.md")
+def check_same_environment(left: EnvConfig, right: EnvConfig) -> None:
+    if left != right:
+        raise ValueError(
+            f"Side-by-side policies must share an environment config, got {left} and {right}"
+        )
+
+
+def compose_side_by_side(
+    left_frames: Sequence[np.ndarray],
+    right_frames: Sequence[np.ndarray],
+    divider_width: int = 8,
+    divider_color: tuple[int, int, int] = (255, 255, 255),
+) -> list[np.ndarray]:
+    if not left_frames or not right_frames:
+        raise ValueError("Both frame sequences must be non-empty")
+    if left_frames[0].shape != right_frames[0].shape:
+        raise ValueError(f"Frame shapes differ: {left_frames[0].shape} and {right_frames[0].shape}")
+    length = max(len(left_frames), len(right_frames))
+    height = left_frames[0].shape[0]
+    divider = np.empty((height, divider_width, 3), dtype=np.uint8)
+    divider[:] = divider_color
+    composed = []
+    for index in range(length):
+        left = left_frames[min(index, len(left_frames) - 1)]
+        right = right_frames[min(index, len(right_frames) - 1)]
+        composed.append(np.concatenate([left, divider, right], axis=1))
+    return composed

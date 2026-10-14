@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import numpy as np
@@ -11,6 +13,16 @@ from quantrl.algos.networks import GaussianActor, LinearFactory, TwinQCritic, pl
 from quantrl.config import SACConfig
 
 UPDATE_METRIC_NAMES = ("critic_loss", "actor_loss", "alpha_loss", "alpha", "entropy", "q_mean")
+
+
+@contextmanager
+def evaluation_mode(module: torch.nn.Module) -> Iterator[None]:
+    was_training = module.training
+    module.eval()
+    try:
+        yield
+    finally:
+        module.train(was_training)
 
 
 class SACAgent:
@@ -60,10 +72,11 @@ class SACAgent:
     @torch.no_grad()
     def act(self, inputs: np.ndarray, deterministic: bool = False) -> np.ndarray:
         tensor_inputs = self._to_tensor(inputs)
-        if deterministic:
-            actions = self.actor.deterministic_action(tensor_inputs)
-        else:
-            actions, _ = self.actor.sample(tensor_inputs)
+        with evaluation_mode(self.actor):
+            if deterministic:
+                actions = self.actor.deterministic_action(tensor_inputs)
+            else:
+                actions, _ = self.actor.sample(tensor_inputs)
         return actions.cpu().numpy()
 
     def update(self, batch: dict[str, np.ndarray]) -> dict[str, float]:
