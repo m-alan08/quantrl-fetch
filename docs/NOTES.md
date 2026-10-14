@@ -97,6 +97,19 @@ Evaluation uses the deterministic action `tanh(mu(x))`. Episode `i` of an evalua
 
 Within one training seed, the confidence interval for success rate or return is a percentile bootstrap over episodes: resample the episode outcomes with replacement 10,000 times, take the mean of each resample, and report the 2.5th and 97.5th percentiles. Across training seeds, `aggregate_across_seeds` reports the mean, sample standard deviation, minimum, maximum, and a bootstrap interval over the seed means. With only 3 seeds that interval is coarse (it can only take values between the smallest and largest seed), so the min and max are reported alongside it.
 
+### FetchPush
+
+FetchPush adds a block on the table: the observation grows to 25 values (gripper, block position, rotation, and velocities), and the achieved goal is the block's position, so success means the block ends within 5 cm of the target. The config in `configs/fetch_push.json` differs from FetchReach in a few places:
+
+- Three hidden layers of 256 units instead of two, since pushing needs more than moving the gripper.
+- Batch size 512.
+- Half a gradient update per environment step (`train.updates_per_step = 0.5`), which keeps a 1,000,000-step run to under two hours of CPU time. A benchmark of one update on one CPU thread: 2.5 ms for 3x256 with batch 256, 3.8 ms with batch 512, 17 ms for 3x512 with batch 1024. More torch threads made updates slower, not faster, so runs use one thread each and run in parallel instead.
+- 10,000 random steps before the policy acts and before updates start, so the buffer has some block movement in it.
+
+A second configuration (`configs/fetch_push_alt.json`: gamma 0.95, tau 0.05, batch 1024, closer to common FetchPush settings in other libraries) was started alongside as a fallback in case the first did not learn. The first one did, so it is the reported baseline.
+
+Learning onset varies a lot between seeds. With the same config, the three seeds first passed 90 percent periodic evaluation success at 240,000, 560,000, and 660,000 steps. The SAC temperature has dropped to between 0.0005 and 0.0015 by 100,000 steps in every run (from 0.2 at the first logged evaluation), so exploration after that comes mostly from the policy's remaining noise and from HER relabeling.
+
 ## How quantization works
 
 ### The quantizer
