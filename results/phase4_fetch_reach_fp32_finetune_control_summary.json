@@ -1,0 +1,47 @@
+[
+  {
+    "env_id": "FetchReach-v4",
+    "name": "fetch_reach_fp32_finetune_control",
+    "method": "fp32_finetune",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "success_rate",
+    "n_seeds": 3,
+    "mean": 1.0,
+    "std": 0.0,
+    "min": 1.0,
+    "max": 1.0,
+    "ci_low": 1.0,
+    "ci_high": 1.0
+  },
+  {
+    "env_id": "FetchReach-v4",
+    "name": "fetch_reach_fp32_finetune_control",
+    "method": "fp32_finetune",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "mean_return",
+    "n_seeds": 3,
+    "mean": -1.53,
+    "std": 0.0,
+    "min": -1.53,
+    "max": -1.53,
+    "ci_low": -1.53,
+    "ci_high": -1.53
+  },
+  {
+    "env_id": "FetchReach-v4",
+    "name": "fetch_reach_fp32_finetune_control",
+    "method": "fp32_finetune",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "mean_final_distance",
+    "n_seeds": 3,
+    "mean": 0.009216557216673237,
+    "std": 0.0025899822985416317,
+    "min": 0.0064231454700796695,
+    "max": 0.01153827466679152,
+    "ci_low": 0.00642314547007967,
+    "ci_high": 0.01153827466679152
+  }
+]

@@ -1,0 +1,258 @@
+{
+  "sweep_wall_seconds": 2728.0,
+  "workers": 4,
+  "runs": [
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w2a2",
+      "seed": 0,
+      "train_wall_seconds": 93.79,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w2a2",
+      "seed": 1,
+      "train_wall_seconds": 92.95,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w2a2",
+      "seed": 2,
+      "train_wall_seconds": 237.09,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w3a3",
+      "seed": 0,
+      "train_wall_seconds": 98.94,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w3a3",
+      "seed": 1,
+      "train_wall_seconds": 85.5,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w3a3",
+      "seed": 2,
+      "train_wall_seconds": 210.18,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w4a4",
+      "seed": 0,
+      "train_wall_seconds": 83.92,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w4a4",
+      "seed": 1,
+      "train_wall_seconds": 85.69,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w4a4",
+      "seed": 2,
+      "train_wall_seconds": 153.7,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w5a5",
+      "seed": 0,
+      "train_wall_seconds": 80.42,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w5a5",
+      "seed": 1,
+      "train_wall_seconds": 87.55,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w5a5",
+      "seed": 2,
+      "train_wall_seconds": 193.34,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w6a6",
+      "seed": 0,
+      "train_wall_seconds": 91.63,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w6a6",
+      "seed": 1,
+      "train_wall_seconds": 78.31,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w6a6",
+      "seed": 2,
+      "train_wall_seconds": 249.57,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w8a8",
+      "seed": 0,
+      "train_wall_seconds": 91.81,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w8a8",
+      "seed": 1,
+      "train_wall_seconds": 85.89,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_finetune_w8a8",
+      "seed": 2,
+      "train_wall_seconds": 96.71,
+      "total_steps": 10000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w2a2",
+      "seed": 0,
+      "train_wall_seconds": 267.1,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w2a2",
+      "seed": 1,
+      "train_wall_seconds": 445.4,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w2a2",
+      "seed": 2,
+      "train_wall_seconds": 621.14,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w3a3",
+      "seed": 0,
+      "train_wall_seconds": 279.03,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w3a3",
+      "seed": 1,
+      "train_wall_seconds": 266.88,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w3a3",
+      "seed": 2,
+      "train_wall_seconds": 653.15,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w4a4",
+      "seed": 0,
+      "train_wall_seconds": 281.42,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w4a4",
+      "seed": 1,
+      "train_wall_seconds": 263.32,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w4a4",
+      "seed": 2,
+      "train_wall_seconds": 627.66,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w5a5",
+      "seed": 0,
+      "train_wall_seconds": 264.33,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w5a5",
+      "seed": 1,
+      "train_wall_seconds": 263.67,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w5a5",
+      "seed": 2,
+      "train_wall_seconds": 564.72,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w6a6",
+      "seed": 0,
+      "train_wall_seconds": 256.08,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w6a6",
+      "seed": 1,
+      "train_wall_seconds": 255.61,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w6a6",
+      "seed": 2,
+      "train_wall_seconds": 609.19,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w8a8",
+      "seed": 0,
+      "train_wall_seconds": 259.08,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w8a8",
+      "seed": 1,
+      "train_wall_seconds": 252.04,
+      "total_steps": 30000,
+      "reused": false
+    },
+    {
+      "name": "fetch_reach_fp32_qat_scratch_w8a8",
+      "seed": 2,
+      "train_wall_seconds": 592.11,
+      "total_steps": 30000,
+      "reused": false
+    }
+  ]
+}
