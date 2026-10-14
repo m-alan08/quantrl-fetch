@@ -38,11 +38,13 @@ Each phase lands on main through its own pull requests. A box is checked only af
 
 ## Phase 4: QAT and the full sweep
 
-- [ ] QAT fine-tuning from an fp32 checkpoint
-- [ ] QAT from scratch
-- [ ] Sweep over bit width and method, tidy CSV in results/
-- [ ] Success rate versus bit width plot with one line per method and shaded intervals
-- [ ] Side-by-side video of an fp32 policy and a low-bit policy
+- [x] QAT fine-tuning from an fp32 checkpoint (starts exactly at the PTQ actor, plus an fp32 fine-tuning control)
+- [x] QAT from scratch
+- [x] Sweep over bit width and method, tidy CSV in results/ (FetchReach)
+- [x] PTQ grid on FetchPush
+- [ ] QAT sweep on FetchPush (running)
+- [x] Success rate versus bit width plot with one line per method and shaded intervals
+- [x] Side-by-side video of an fp32 policy and a low-bit policy
 
 ## Phase 5: post-training
 

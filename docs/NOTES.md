@@ -213,6 +213,17 @@ In the plot, the fp32 result is drawn as the leftmost point of every method's li
 
 `compose_side_by_side` places two equally sized frame sequences next to each other with an 8-pixel divider (keeping the width a multiple of 8, which video encoders prefer). Both policies are rendered on the same environment seeds, so they see the same goal; each episode is 51 frames plus a short hold on the last frame, so the two sides stay in step. Labels show the policy (for example "fp32" or "3-bit PTQ") and success or failure on the last frame.
 
+### What the method comparison showed
+
+On FetchReach (3 seeds, per-channel weights, details and numbers in the README):
+
+- QAT fine-tuning brought 4 and 5 bits to 100 percent success on every seed, from 82 and 98 percent with PTQ. On the 4-bit episodes that PTQ fails for seed 0, the fine-tuned actor succeeded on every one of the first 12.
+- QAT from scratch reached 96 percent at 4 bits with the same budget as the fp32 baseline.
+- At 3 bits no method passed about 50 percent. The fine-tuned actor stays close to its PTQ starting point instead of improving, which is what an input-resolution limit would predict: the step of a 3-bit input grid is roughly twice the 4-bit step of about 3 cm, so the actor cannot tell apart goals that the task needs it to tell apart, no matter how its weights are trained. A direct test would keep the first layer's input at higher precision.
+- Fine-tuning improves final precision for every bit width, but the fp32 fine-tuning control shows that most of that comes from the extra training: the fp32 actor fine-tuned with the same recipe ends 0.9 cm from the goal on average, against 3.1 cm before fine-tuning.
+
+On FetchPush, PTQ collapses earlier: 95 percent at 6 bits, 83 at 5, 15 at 4, and the do-nothing floor of 8 percent at 3 and 2 bits. Weights alone at 4 bits keep 87 percent, so activations are again the main problem. Pushing a block needs finer control than reaching a point, which fits the larger sensitivity.
+
 ## Design decisions
 
 - Configs are plain dataclasses serialized to JSON, so there is no hidden global state and every run can save exactly what it used.
