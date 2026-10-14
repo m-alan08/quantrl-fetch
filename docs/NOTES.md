@@ -224,6 +224,10 @@ On FetchReach (3 seeds, per-channel weights, details and numbers in the README):
 
 On FetchPush, PTQ collapses earlier: 95 percent at 6 bits, 83 at 5, 15 at 4, and the do-nothing floor of 8 percent at 3 and 2 bits. Weights alone at 4 bits keep 87 percent, so activations are again the main problem. Pushing a block needs finer control than reaching a point, which fits the larger sensitivity.
 
+The full FetchPush comparison reverses part of the FetchReach picture. QAT from scratch is clearly best (96.3 percent at 5 bits, 39.3 at 4), while QAT fine-tuning helps only at 6 bits and is no better than PTQ at 5 and 4. The fp32 fine-tuning control (99.3 percent after the same 100,000 steps) rules out the recipe simply damaging the policy. Two differences from FetchReach could explain it, neither tested yet: fine-tuning had a tenth of the baseline budget, and on FetchPush a failing low-bit actor rarely moves the block, so the fresh replay buffer it fills holds little useful pushing experience, whereas on FetchReach even a failing actor ends near the goal. QAT from scratch avoids both by learning with the quantized actor from the start, with the full budget and a buffer that grows with the policy.
+
+At 3 and 2 bits even QAT from scratch scores slightly below the 8 percent do-nothing floor, so the quantized actor actively disturbs blocks that started at the goal. Below 4 bits, none of these methods produce a usable FetchPush actor.
+
 ## Design decisions
 
 - Configs are plain dataclasses serialized to JSON, so there is no hidden global state and every run can save exactly what it used.

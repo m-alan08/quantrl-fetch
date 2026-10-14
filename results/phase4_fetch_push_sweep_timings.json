@@ -1,0 +1,258 @@
+{
+  "sweep_wall_seconds": 18342.9,
+  "workers": 9,
+  "runs": [
+    {
+      "name": "fetch_push_fp32_qat_finetune_w2a2",
+      "seed": 0,
+      "train_wall_seconds": 1001.41,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w2a2",
+      "seed": 1,
+      "train_wall_seconds": 973.54,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w2a2",
+      "seed": 2,
+      "train_wall_seconds": 501.73,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w3a3",
+      "seed": 0,
+      "train_wall_seconds": 1012.68,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w3a3",
+      "seed": 1,
+      "train_wall_seconds": 967.64,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w3a3",
+      "seed": 2,
+      "train_wall_seconds": 508.29,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w4a4",
+      "seed": 0,
+      "train_wall_seconds": 1001.32,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w4a4",
+      "seed": 1,
+      "train_wall_seconds": 973.2,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w4a4",
+      "seed": 2,
+      "train_wall_seconds": 979.11,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w5a5",
+      "seed": 0,
+      "train_wall_seconds": 1001.21,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w5a5",
+      "seed": 1,
+      "train_wall_seconds": 970.78,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w5a5",
+      "seed": 2,
+      "train_wall_seconds": 968.33,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w6a6",
+      "seed": 0,
+      "train_wall_seconds": 994.2,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w6a6",
+      "seed": 1,
+      "train_wall_seconds": 996.86,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w6a6",
+      "seed": 2,
+      "train_wall_seconds": 972.38,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w8a8",
+      "seed": 0,
+      "train_wall_seconds": 994.92,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w8a8",
+      "seed": 1,
+      "train_wall_seconds": 1003.34,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_finetune_w8a8",
+      "seed": 2,
+      "train_wall_seconds": 968.97,
+      "total_steps": 100000,
+      "reused": true
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w2a2",
+      "seed": 0,
+      "train_wall_seconds": 8915.46,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w2a2",
+      "seed": 1,
+      "train_wall_seconds": 9285.96,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w2a2",
+      "seed": 2,
+      "train_wall_seconds": 8916.71,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w3a3",
+      "seed": 0,
+      "train_wall_seconds": 9195.81,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w3a3",
+      "seed": 1,
+      "train_wall_seconds": 9131.43,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w3a3",
+      "seed": 2,
+      "train_wall_seconds": 8972.01,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w4a4",
+      "seed": 0,
+      "train_wall_seconds": 9005.89,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w4a4",
+      "seed": 1,
+      "train_wall_seconds": 8965.1,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w4a4",
+      "seed": 2,
+      "train_wall_seconds": 8992.16,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w5a5",
+      "seed": 0,
+      "train_wall_seconds": 9020.72,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w5a5",
+      "seed": 1,
+      "train_wall_seconds": 9015.65,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w5a5",
+      "seed": 2,
+      "train_wall_seconds": 9044.02,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w6a6",
+      "seed": 0,
+      "train_wall_seconds": 9007.12,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w6a6",
+      "seed": 1,
+      "train_wall_seconds": 8984.95,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w6a6",
+      "seed": 2,
+      "train_wall_seconds": 9028.12,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w8a8",
+      "seed": 0,
+      "train_wall_seconds": 9049.62,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w8a8",
+      "seed": 1,
+      "train_wall_seconds": 9054.85,
+      "total_steps": 1000000,
+      "reused": false
+    },
+    {
+      "name": "fetch_push_fp32_qat_scratch_w8a8",
+      "seed": 2,
+      "train_wall_seconds": 9048.32,
+      "total_steps": 1000000,
+      "reused": false
+    }
+  ]
+}

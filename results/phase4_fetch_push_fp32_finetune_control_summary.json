@@ -1,0 +1,47 @@
+[
+  {
+    "env_id": "FetchPush-v4",
+    "name": "fetch_push_fp32_finetune_control",
+    "method": "fp32_finetune",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "success_rate",
+    "n_seeds": 3,
+    "mean": 0.9933333333333333,
+    "std": 0.005773502691896262,
+    "min": 0.99,
+    "max": 1.0,
+    "ci_low": 0.9899999999999999,
+    "ci_high": 1.0
+  },
+  {
+    "env_id": "FetchPush-v4",
+    "name": "fetch_push_fp32_finetune_control",
+    "method": "fp32_finetune",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "mean_return",
+    "n_seeds": 3,
+    "mean": -9.526666666666666,
+    "std": 0.47648014998878346,
+    "min": -10.07,
+    "max": -9.18,
+    "ci_low": -10.07,
+    "ci_high": -9.18
+  },
+  {
+    "env_id": "FetchPush-v4",
+    "name": "fetch_push_fp32_finetune_control",
+    "method": "fp32_finetune",
+    "weight_bits": 32,
+    "activation_bits": 32,
+    "metric": "mean_final_distance",
+    "n_seeds": 3,
+    "mean": 0.024278524498225002,
+    "std": 0.0010985729113311296,
+    "min": 0.02302419863726807,
+    "max": 0.02506958501078308,
+    "ci_low": 0.02302419863726807,
+    "ci_high": 0.025069585010783085
+  }
+]

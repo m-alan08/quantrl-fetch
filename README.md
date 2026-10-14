@@ -2,7 +2,7 @@
 
 How few bits does a robot arm policy actually need? This project trains reinforcement learning policies for a simulated Fetch robot arm (MuJoCo, via Gymnasium Robotics) and then squeezes the policy's actor network down to low-bit integer precision: 8 bits, then 6, 5, 4, 3, and 2. It compares three ways of getting a low-bit actor (quantize after training, fine-tune with quantization in the loop, or train with quantization from the start) and later asks whether a post-training stage, behavior cloning followed by online post-training, can win back the performance that quantization costs. The motivation is deployment: a policy that runs on a microcontroller or a small accelerator has to live with low-precision arithmetic, and it is worth knowing where that starts to break a closed-loop controller and what it takes to repair it.
 
-**Status:** Phases 0 to 3 are done: setup, SAC and HER at fp32 on FetchReach and FetchPush, and the quantizer with post-training quantization of the FetchReach actor. Phase 4 (QAT and the method comparison) is done for FetchReach; the FetchPush QAT sweep is running. See [ROADMAP.md](ROADMAP.md).
+**Status:** Phases 0 to 4 are done: setup, SAC and HER at fp32 on FetchReach and FetchPush, the quantizer, and the comparison of PTQ, QAT fine-tuning, and QAT from scratch on both tasks. Phase 5 (post-training) is next. See [ROADMAP.md](ROADMAP.md).
 
 ## Key results
 
@@ -27,6 +27,26 @@ How few bits does a robot arm policy actually need? This project trains reinforc
 
 Raw numbers: [results/phase4_fetch_reach_sweep.csv](results/phase4_fetch_reach_sweep.csv), [results/phase4_fetch_reach_sweep_summary.csv](results/phase4_fetch_reach_sweep_summary.csv), and the control in [results/phase4_fetch_reach_fp32_finetune_control.csv](results/phase4_fetch_reach_fp32_finetune_control.csv).
 
+**Three ways to get a low-bit actor on FetchPush.** Same protocol as FetchReach: 3 seeds, per-channel weights, every actor on the same 100 episodes. QAT fine-tuning runs for 100,000 environment steps; QAT from scratch gets the full 1,000,000-step budget of the fp32 baseline.
+
+| Bits | PTQ | QAT fine-tune | QAT from scratch |
+| --- | --- | --- | --- |
+| fp32 | 98.3 (98 to 99), 2.1 cm | 98.3 (98 to 99), 2.1 cm | 98.3 (98 to 99), 2.1 cm |
+| 8 | 98.7 (98 to 99), 2.2 cm | 98.3 (97 to 99), 2.7 cm | 100.0 (100 to 100), 2.0 cm |
+| 6 | 95.0 (93 to 97), 4.0 cm | 98.0 (96 to 100), 2.4 cm | 99.3 (99 to 100), 2.4 cm |
+| 5 | 82.7 (74 to 90), 5.9 cm | 83.7 (74 to 94), 4.6 cm | 96.3 (95 to 98), 2.7 cm |
+| 4 | 14.7 (2 to 22), 23.7 cm | 10.7 (9 to 14), 23.8 cm | 39.3 (32 to 53), 10.7 cm |
+| 3 | 8.0 (8 to 8), 18.3 cm | 8.0 (8 to 8), 18.1 cm | 7.3 (7 to 8), 18.0 cm |
+| 2 | 8.0 (8 to 8), 17.7 cm | 8.0 (8 to 8), 17.7 cm | 6.7 (6 to 8), 18.9 cm |
+
+- **On FetchPush, QAT from scratch is the method that works.** It keeps 96.3 percent at 5 bits, where PTQ and QAT fine-tuning stay near 83 percent, and it is the only method well above the floor at 4 bits (39 percent against 15 and 11).
+- **QAT fine-tuning helps at 6 bits (95 to 98 percent) but not below.** At 5 bits it ends where PTQ started, and at 4 bits it is slightly worse. This is the opposite of FetchReach, where fine-tuning recovered 4 bits completely. The fp32 control fine-tuned with the same recipe and budget goes from 98.3 to 99.3 percent, so the recipe itself does not damage a working policy. A plausible reason, not tested here, is that a low-bit actor that rarely moves the block fills the fresh replay buffer with episodes that teach the critic little about pushing.
+- **3 and 2 bits fail for every method.** QAT from scratch at those widths lands slightly below the do-nothing floor (7.3 and 6.7 percent), meaning it sometimes knocks away a block that started at the goal.
+
+![Success and final distance versus bit width for PTQ, QAT fine-tuning, and QAT from scratch on FetchPush](assets/fetch_push_methods_bits.png)
+
+Raw numbers: [results/phase4_fetch_push_sweep.csv](results/phase4_fetch_push_sweep.csv), [results/phase4_fetch_push_sweep_summary.csv](results/phase4_fetch_push_sweep_summary.csv), and the control in [results/phase4_fetch_push_fp32_finetune_control.csv](results/phase4_fetch_push_fp32_finetune_control.csv).
+
 **FetchPush is much more sensitive to PTQ.** Same protocol on the FetchPush actors. A policy that never moves succeeds on 8 of these 100 episodes (the block already starts close enough to the goal), so 8 percent is the floor.
 
 | Bits | Weights and activations, per-channel | Weights and activations, per-tensor | Weights only, per-channel | Activations only |
@@ -39,7 +59,7 @@ Raw numbers: [results/phase4_fetch_reach_sweep.csv](results/phase4_fetch_reach_s
 | 3 | 8.0 (8 to 8) | 8.0 (8 to 8) | 10.0 (9 to 12) | 8.0 (8 to 8) |
 | 2 | 8.0 (8 to 8) | 8.0 (8 to 8) | 8.0 (8 to 8) | 8.0 (8 to 8) |
 
-At 4 bits, PTQ keeps 82 percent on FetchReach but only 15 percent on FetchPush. Again weights tolerate low precision much better than activations: 4-bit weights alone keep 87 percent. QAT results for FetchPush will be added when the running sweep finishes.
+At 4 bits, PTQ keeps 82 percent on FetchReach but only 15 percent on FetchPush. Again weights tolerate low precision much better than activations: 4-bit weights alone keep 87 percent.
 
 ![PTQ ablation on FetchPush](assets/fetch_push_ptq_ablation.png)
 
@@ -110,6 +130,10 @@ The fp32 FetchPush policy (seed 1) on four evaluation episodes:
 **What QAT fine-tuning fixes.** Left: 4-bit PTQ. Right: the same actor after 4-bit QAT fine-tuning, on the same four episodes. It succeeds on all of them, and on every one of the first 12 episodes that 4-bit PTQ fails.
 
 ![4-bit PTQ versus 4-bit QAT fine-tuning on FetchReach](assets/fetch_reach_ptq4_vs_qat4.gif)
+
+**FetchPush at 5 bits.** Left: the fp32 FetchPush actor (seed 0) after 5-bit PTQ. Right: an actor trained with 5-bit QAT from scratch (seed 0). The first three episodes are ones where PTQ fails and both fp32 and QAT from scratch succeed (there are 15 such episodes out of 100 for this seed). The fourth is the first evaluation episode, included unselected: there PTQ succeeds and QAT from scratch fails. Over all 100 episodes this seed scores 84 percent with PTQ and 95 percent with QAT from scratch.
+
+![5-bit PTQ versus 5-bit QAT from scratch on FetchPush](assets/fetch_push_ptq5_vs_qat_scratch5.gif)
 
 ## Method
 
@@ -227,6 +251,18 @@ uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/che
 
 Measured runtime: the sweep took 2,728 seconds of compute time with 4 worker processes while five FetchPush runs shared the CPU. Individual QAT fine-tuning runs took 78 to 250 seconds and QAT-from-scratch runs 252 to 653 seconds. Each fp32 control run took about 130 seconds. The FetchPush PTQ grid (`scripts/evaluate_ptq.py` on the Phase 2 checkpoints, same flags as Phase 3) took 6 minutes 52 seconds, also on a shared CPU.
 
+**Phase 4, method sweep on FetchPush** (uses the Phase 2 checkpoints):
+
+```bash
+uv run python scripts/sweep.py --base-config configs/fetch_push.json --fp32-runs runs/fetch_push_fp32_seed0 runs/fetch_push_fp32_seed1 runs/fetch_push_fp32_seed2 --finetune-set train.total_steps=100000 train.random_steps=0 train.update_after=10000 train.eval_interval=10000 sac.actor_lr=0.0001 sac.alpha_lr=0 --workers 9 --out results/phase4_fetch_push_sweep.csv --summary results/phase4_fetch_push_sweep_summary.csv --timings results/phase4_fetch_push_sweep_timings.json
+uv run python scripts/make_plots.py --sweep-csv results/phase4_fetch_push_sweep.csv --out assets/fetch_push_methods_bits.png --title "Low-bit actors on FetchPush: PTQ vs QAT (per-channel weights)"
+uv run python scripts/make_video.py --checkpoint runs/fetch_push_fp32_seed0/checkpoint.pt --ptq-bits 5 --compare-checkpoint runs/fetch_push_fp32_qat_scratch_w5a5_seed0/checkpoint.pt --seeds 1000006 1000008 1000015 1000000 --size 360 --out assets/fetch_push_ptq5_vs_qat_scratch5.mp4 --gif assets/fetch_push_ptq5_vs_qat_scratch5.gif --gif-width 560
+```
+
+The fp32 fine-tuning control for FetchPush uses the same `train.py` command as for FetchReach, with `runs/fetch_push_fp32_seed<N>`, the name `fetch_push_fp32_finetune_control`, and the FetchPush fine-tuning settings above.
+
+Measured runtime: the FetchPush sweep ran in two parts. The PTQ and QAT fine-tuning part took 2,531 seconds with 8 workers (each fine-tuning run 502 to 1,013 seconds). The QAT-from-scratch part, rerun as the full command above so that finished fine-tuning runs were reused, took 18,343 seconds with 9 workers; each from-scratch run took 8,915 to 9,286 seconds (about 2.5 hours), with 9 runs sharing the 10-core CPU. All times are compute time from a clock that stops during sleep.
+
 ## Limitations and caveats
 
 - mujoco is pinned below 3.12 because newer releases break Fetch environment creation in gymnasium-robotics 1.4.2. Details are in [docs/NOTES.md](docs/NOTES.md).
@@ -237,6 +273,7 @@ Measured runtime: the sweep took 2,728 seconds of compute time with 4 worker pro
 - Success means ending within 5 cm of the goal, and the trained FetchReach policy ends about 3 cm away on average, so small precision losses can flip successes. Mean final distance is reported alongside success for this reason.
 - Three training seeds give a rough estimate of the spread across seeds.
 - Activations are quantized with a symmetric grid even after ReLU, where they are never negative, so hidden activations effectively lose one bit of resolution. This is most visible at 2 and 3 bits.
+- The three methods get very different training budgets: PTQ none, QAT fine-tuning 10 percent of the baseline's steps, QAT from scratch the full baseline. On FetchPush the ranking may partly reflect that budget. A longer fine-tune was not tried.
 - QAT fine-tuning gets extra training that PTQ does not, which is why the fp32 fine-tuning control is reported next to it. Its recipe (actor learning rate 1e-4, frozen temperature) was chosen from pilot runs on seed 0 at 3 and 4 bits, then used unchanged for every seed and bit width.
 - The comparison clips show hand-picked episodes chosen to contain failures. The success rates in the tables come from all 100 evaluation episodes.
 - Quantization here is simulated (fake quantization in fp32 arithmetic). It models the accuracy effect of low-bit weights and activations but does not measure speed or energy on real integer hardware.

@@ -42,7 +42,7 @@ Each phase lands on main through its own pull requests. A box is checked only af
 - [x] QAT from scratch
 - [x] Sweep over bit width and method, tidy CSV in results/ (FetchReach)
 - [x] PTQ grid on FetchPush
-- [ ] QAT sweep on FetchPush (running)
+- [x] QAT sweep on FetchPush (QAT from scratch keeps 96 percent at 5 bits)
 - [x] Success rate versus bit width plot with one line per method and shaded intervals
 - [x] Side-by-side video of an fp32 policy and a low-bit policy
 
