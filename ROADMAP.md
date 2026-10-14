@@ -25,8 +25,8 @@ Each phase lands on main through its own pull requests. A box is checked only af
 
 ## Phase 2: FetchPush at fp32
 
-- [ ] Hyperparameters for FetchPush
-- [ ] Train 3 seeds and record how long training takes on this machine
+- [x] Hyperparameters for FetchPush (`configs/fetch_push.json`)
+- [x] Train 3 seeds and record how long training takes on this machine (success 0.98, 0.99, 0.98; about 1 hour 47 minutes of compute per seed with other jobs sharing the CPU)
 
 ## Phase 3: quantization module and PTQ
 

@@ -1,0 +1,15 @@
+{
+  "name": "fetch_push_fp32",
+  "env": {"env_id": "FetchPush-v4"},
+  "sac": {"hidden_sizes": [256, 256, 256], "batch_size": 512, "gamma": 0.98, "tau": 0.005},
+  "her": {"replay_k": 4, "buffer_episodes": 20000},
+  "train": {
+    "total_steps": 1000000,
+    "random_steps": 10000,
+    "update_after": 10000,
+    "updates_per_step": 0.5,
+    "eval_interval": 20000,
+    "eval_episodes": 50
+  },
+  "eval": {"episodes": 100}
+}

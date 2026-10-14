@@ -2,7 +2,7 @@
 
 How few bits does a robot arm policy actually need? This project trains reinforcement learning policies for a simulated Fetch robot arm (MuJoCo, via Gymnasium Robotics) and then squeezes the policy's actor network down to low-bit integer precision: 8 bits, then 6, 5, 4, 3, and 2. It compares three ways of getting a low-bit actor (quantize after training, fine-tune with quantization in the loop, or train with quantization from the start) and later asks whether a post-training stage, behavior cloning followed by online post-training, can win back the performance that quantization costs. The motivation is deployment: a policy that runs on a microcontroller or a small accelerator has to live with low-precision arithmetic, and it is worth knowing where that starts to break a closed-loop controller and what it takes to repair it.
 
-**Status:** Phase 0 (setup) and Phase 1 (SAC and HER at fp32 on FetchReach) are done. Phase 3 (quantizer and post-training quantization of the FetchReach actor) is done. Phase 2 (FetchPush) is in progress. See [ROADMAP.md](ROADMAP.md).
+**Status:** Phases 0 to 3 are done: setup, SAC and HER at fp32 on FetchReach and FetchPush, and the quantizer with post-training quantization of the FetchReach actor. Phase 4 (QAT and the full method comparison) is in progress. See [ROADMAP.md](ROADMAP.md).
 
 ## Key results
 
@@ -32,7 +32,19 @@ What this shows so far:
 
 Raw numbers: [results/phase3_fetch_reach_ptq.csv](results/phase3_fetch_reach_ptq.csv) (per seed) and [results/phase3_fetch_reach_ptq_summary.csv](results/phase3_fetch_reach_ptq_summary.csv) (across seeds, also return and final distance). QAT and the comparison across all three methods come in Phase 4.
 
-**fp32 baseline.**
+**fp32 baselines.**
+
+FetchPush-v4 (the gripper has to push a block to the goal), 3 training seeds, 1,000,000 environment steps each, evaluated on 100 fixed episodes per seed:
+
+| Task | Precision | Training seeds | Success rate (mean, min to max over seeds) | Mean return | Mean final distance of the block to the goal |
+| --- | --- | --- | --- | --- | --- |
+| FetchPush-v4 | fp32 | 3 | 0.983 (0.98 to 0.99) | -10.05 | 2.1 cm |
+
+The seeds started learning at very different times: they first reached 90 percent periodic evaluation success at 240,000, 560,000, and 660,000 steps. Raw numbers: [results/phase2_fetch_push_fp32_eval.csv](results/phase2_fetch_push_fp32_eval.csv) and [results/phase2_fetch_push_fp32_summary.json](results/phase2_fetch_push_fp32_summary.json).
+
+![FetchPush training curves](assets/fetch_push_fp32_training.png)
+
+FetchReach-v4:
 
 | Task | Precision | Training seeds | Success rate (mean, min to max over seeds) | Mean return | Mean final distance to goal |
 | --- | --- | --- | --- | --- | --- |
@@ -47,6 +59,10 @@ Each seed is evaluated with deterministic actions on the same 100 evaluation epi
 The fp32 FetchReach policy on four evaluation episodes (the red dot is the goal):
 
 ![fp32 FetchReach policy](assets/fetch_reach_fp32.gif)
+
+The fp32 FetchPush policy (seed 1) on four evaluation episodes:
+
+![fp32 FetchPush policy](assets/fetch_push_fp32.gif)
 
 A side-by-side clip of an fp32 policy and a low-bit policy, plus the main success-versus-bit-width chart, will go here after Phase 4.
 
@@ -118,6 +134,19 @@ uv run python scripts/make_plots.py --runs runs/fetch_reach_fp32_seed{0,1,2} --o
 uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/checkpoint.pt --episodes 4 --out assets/fetch_reach_fp32.mp4 --gif assets/fetch_reach_fp32.gif
 ```
 
+**Phase 2, FetchPush fp32** (config [configs/fetch_push.json](configs/fetch_push.json): three hidden layers of 256 units, batch 512, half a gradient update per environment step, 10,000 random steps first, 1,000,000 steps in total; seeds 0, 1, 2):
+
+```bash
+uv run python scripts/train.py --config configs/fetch_push.json --seed 0
+uv run python scripts/train.py --config configs/fetch_push.json --seed 1
+uv run python scripts/train.py --config configs/fetch_push.json --seed 2
+uv run python scripts/evaluate.py --checkpoints runs/fetch_push_fp32_seed{0,1,2}/checkpoint.pt --out results/phase2_fetch_push_fp32_eval.csv --summary results/phase2_fetch_push_fp32_summary.json
+uv run python scripts/make_plots.py --runs runs/fetch_push_fp32_seed{0,1,2} --out assets/fetch_push_fp32_training.png --title "SAC + HER on FetchPush-v4 (fp32, 3 seeds)" --csv results/phase2_fetch_push_fp32_progress.csv
+uv run python scripts/make_video.py --checkpoint runs/fetch_push_fp32_seed1/checkpoint.pt --episodes 4 --size 360 --out assets/fetch_push_fp32.mp4 --gif assets/fetch_push_fp32.gif
+```
+
+Measured runtime: each seed took 6,416 to 6,475 seconds (about 1 hour 47 minutes) of training, run as three parallel processes on an Apple M5 while two other FetchPush runs and the FetchReach PTQ and QAT experiments were also using the CPU. These times come from a monotonic clock that stops while the Mac sleeps, so they count compute time only; the runs were paused for about three hours of lid-closed sleep, and wall-clock time was correspondingly longer. A single SAC update for this network takes about 3.8 ms on one CPU thread, and extra torch threads did not make it faster.
+
 **Phase 3, PTQ of the FetchReach actors** (uses the Phase 1 checkpoints; calibration on 20 episodes with seeds starting at 2,000,000, disjoint from the evaluation seeds):
 
 ```bash
@@ -134,6 +163,9 @@ Measured runtime for Phase 1: one seed alone took 90 seconds of training (96 sec
 
 - mujoco is pinned below 3.12 because newer releases break Fetch environment creation in gymnasium-robotics 1.4.2. Details are in [docs/NOTES.md](docs/NOTES.md).
 - FetchReach is easy (every seed solves it in about 3,000 steps), so it can only reveal large quantization damage. FetchPush is the harder benchmark.
+- FetchPush learning onset varies a lot across seeds (240,000 to 660,000 steps to reach 90 percent), so 3 seeds say little about how reliably this configuration learns.
+- Two FetchPush configurations were started at the same time: [configs/fetch_push.json](configs/fetch_push.json) and a fallback, [configs/fetch_push_alt.json](configs/fetch_push_alt.json) (gamma 0.95, tau 0.05, batch 1024, 2 seeds). The rule set before either finished was to report the first configuration if all 3 of its seeds learned, and switch to the fallback otherwise. All 3 learned, so it is the baseline. No other settings were tried.
+- Laptop sleep pauses training. Reported training times count only time the machine was awake.
 - Success means ending within 5 cm of the goal, and the trained FetchReach policy ends about 3 cm away on average, so small precision losses can flip successes. Mean final distance is reported alongside success for this reason.
 - Three training seeds give a rough estimate of the spread across seeds.
 - Activations are quantized with a symmetric grid even after ReLU, where they are never negative, so hidden activations effectively lose one bit of resolution. This is most visible at 2 and 3 bits.
