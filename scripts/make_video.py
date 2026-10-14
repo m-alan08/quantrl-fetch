@@ -29,6 +29,12 @@ def parse_arguments() -> argparse.Namespace:
         description="Render evaluation episodes of a policy, or two policies side by side."
     )
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument(
+        "--ptq-bits",
+        type=int,
+        default=None,
+        help="Show the checkpoint quantized with PTQ at this bit width instead of as trained",
+    )
     parser.add_argument("--compare-checkpoint", default=None, help="Right-hand policy")
     parser.add_argument(
         "--compare-ptq-bits",
@@ -87,10 +93,14 @@ def main() -> None:
             first_seed = config.eval.seed_offset
         seeds = evaluation_seeds(first_seed, arguments.episodes)
 
+    left_actor = loaded.actor
     left_title = arguments.title or policy_title(config)
+    if arguments.ptq_bits:
+        left_actor = ptq_actor(loaded, arguments.ptq_bits, not arguments.per_tensor)
+        left_title = arguments.title or policy_title(config, "ptq", arguments.ptq_bits)
     left_frames, left_outcomes = render_policy_episodes(
         config.env,
-        deterministic_policy_function(loaded.actor),
+        deterministic_policy_function(left_actor),
         loaded.normalizer,
         seeds,
         left_title,

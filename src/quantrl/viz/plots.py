@@ -7,6 +7,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 import pandas as pd
 
 PALETTE = ["#2563eb", "#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"]
@@ -96,6 +97,7 @@ def plot_success_vs_bits(
         ("mean_final_distance", "Final distance to goal (cm)", 100.0),
     ),
     success_radius_cm: float | None = 5.0,
+    log_scale_columns: Sequence[str] = ("mean_final_distance",),
 ) -> None:
     apply_style()
     bit_widths = sorted(per_seed["bits"].unique(), reverse=True)
@@ -121,6 +123,12 @@ def plot_success_vs_bits(
         axis.set_ylabel(label)
         if column == "success_rate":
             axis.set_ylim(-0.03, 1.03)
+        if column in log_scale_columns:
+            axis.set_yscale("log")
+            axis.yaxis.set_major_locator(matplotlib.ticker.LogLocator(base=10, subs=(1, 2, 5)))
+            axis.yaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter("%g"))
+            axis.yaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+            axis.set_ylabel(label.replace(" to goal (cm)", " (cm, log scale)"))
         if column == "mean_final_distance" and success_radius_cm is not None:
             axis.axhline(success_radius_cm, color="#6b7280", linestyle="--", linewidth=1)
             axis.annotate(
