@@ -107,7 +107,7 @@ FetchPush adds a block on the table: the observation grows to 25 values (gripper
 
 A second configuration (`configs/fetch_push_alt.json`: gamma 0.95, tau 0.05, batch 1024, closer to common FetchPush settings in other libraries) was started alongside as a fallback in case the first did not learn. The first one did, so it is the reported baseline.
 
-Learning onset varies a lot between seeds. With the same config, the three seeds first passed 90 percent periodic evaluation success at 240,000, 560,000, and 660,000 steps. The SAC temperature drops to about 0.001 within the first 100,000 steps in every run, so exploration after that comes mostly from the policy's remaining noise and from HER relabeling.
+Learning onset varies a lot between seeds. With the same config, the three seeds first passed 90 percent periodic evaluation success at 240,000, 560,000, and 660,000 steps. The SAC temperature has dropped to between 0.0005 and 0.0015 by 100,000 steps in every run (from 0.2 at the first logged evaluation), so exploration after that comes mostly from the policy's remaining noise and from HER relabeling.
 
 ## How quantization works
 
