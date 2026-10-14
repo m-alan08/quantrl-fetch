@@ -129,6 +129,13 @@ def write_gif(
     )
 
 
+def check_same_environment(left: EnvConfig, right: EnvConfig) -> None:
+    if left != right:
+        raise ValueError(
+            f"Side-by-side policies must share an environment config, got {left} and {right}"
+        )
+
+
 def compose_side_by_side(
     left_frames: Sequence[np.ndarray],
     right_frames: Sequence[np.ndarray],

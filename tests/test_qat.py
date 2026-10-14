@@ -4,7 +4,7 @@ import torch
 
 from quantrl.algos.sac import SACAgent
 from quantrl.checkpoint import deterministic_policy_function, load_checkpoint, load_policy
-from quantrl.config import QuantConfig, SACConfig, load_config
+from quantrl.config import EnvConfig, QuantConfig, SACConfig, load_config
 from quantrl.envs.factory import env_dimensions, make_env
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluation_seeds
@@ -21,7 +21,7 @@ from quantrl.sweep import (
     training_configs,
 )
 from quantrl.training import train
-from quantrl.viz.video import compose_side_by_side
+from quantrl.viz.video import check_same_environment, compose_side_by_side
 
 SMOKE_OVERRIDES = [
     "sac.hidden_sizes=[32, 32]",
@@ -204,6 +204,30 @@ def test_sweep_plan_rejects_bad_inputs():
         SweepPlan("configs/fetch_reach.json", [], [4], ["qat_magic"])
     with pytest.raises(ValueError):
         SweepPlan("configs/fetch_reach.json", [], [32, 4], ["ptq"])
+    with pytest.raises(ValueError, match="bit widths"):
+        SweepPlan("configs/fetch_reach.json", ["a"], [4, 4], ["ptq"])
+    with pytest.raises(ValueError, match="methods"):
+        SweepPlan("configs/fetch_reach.json", ["a"], [4], ["ptq", "ptq"])
+    with pytest.raises(ValueError, match="fp32 run directories"):
+        SweepPlan("configs/fetch_reach.json", ["runs/a", "runs/./a"], [4], ["ptq"])
+
+
+def test_scratch_runs_never_inherit_an_initial_checkpoint(fp32_run, tmp_path):
+    base = tmp_path / "continuation.json"
+    base.write_text(
+        '{"env": {"env_id": "FetchReach-v4"}, '
+        '"train": {"init_checkpoint": "some/checkpoint.pt", "eval_at_start": true}}'
+    )
+    plan = SweepPlan(str(base), [str(fp32_run.run_dir)], [4], ["qat_scratch"])
+    scratch = training_configs(plan)[0]
+    assert scratch.train.init_checkpoint is None
+    assert not scratch.train.eval_at_start
+
+
+def test_side_by_side_requires_the_same_environment():
+    check_same_environment(EnvConfig(), EnvConfig())
+    with pytest.raises(ValueError):
+        check_same_environment(EnvConfig(), EnvConfig(env_id="FetchPush-v4"))
 
 
 def test_fp32_rows_are_repeated_for_each_method():

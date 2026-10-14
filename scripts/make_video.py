@@ -10,6 +10,7 @@ from quantrl.envs.factory import make_env
 from quantrl.eval.evaluate import evaluation_seeds
 from quantrl.quant.ptq import collect_calibration_inputs, quantize_actor_post_training
 from quantrl.viz.video import (
+    check_same_environment,
     compose_side_by_side,
     render_policy_episodes,
     write_gif,
@@ -112,6 +113,7 @@ def main() -> None:
     if arguments.compare_checkpoint or arguments.compare_ptq_bits:
         if arguments.compare_checkpoint:
             compared = load_policy(arguments.compare_checkpoint)
+            check_same_environment(config.env, compared.config.env)
             right_actor, right_normalizer = compared.actor, compared.normalizer
             right_title = policy_title(compared.config)
         else:

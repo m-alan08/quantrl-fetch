@@ -36,6 +36,14 @@ class SweepPlan:
             raise ValueError(f"Unknown methods {sorted(unknown)}, expected some of {METHODS}")
         if FULL_PRECISION_BITS in self.bit_widths:
             raise ValueError("Bit widths for the sweep are low-bit only; fp32 is always included")
+        for label, values in (
+            ("bit widths", self.bit_widths),
+            ("methods", self.methods),
+            ("fp32 run directories", [str(Path(item).resolve()) for item in self.fp32_run_dirs]),
+        ):
+            duplicates = sorted({value for value in values if values.count(value) > 1})
+            if duplicates:
+                raise ValueError(f"Duplicate {label} in the sweep plan: {duplicates}")
 
 
 def fp32_checkpoint(run_dir: str | Path) -> Path:
@@ -84,6 +92,8 @@ def training_configs(plan: SweepPlan) -> list[RunConfig]:
                             f"name={quantized_run_name(base_name, 'qat_scratch', bits)}",
                             f"seed={fp32_config.seed}",
                             *plan.scratch_overrides,
+                            "train.init_checkpoint=null",
+                            "train.eval_at_start=false",
                         ],
                     )
                 )
