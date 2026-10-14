@@ -1,0 +1,4 @@
+env_id,name,seed,weight_bits,activation_bits,method,episodes,success_rate,success_ci_low,success_ci_high,mean_return,return_ci_low,return_ci_high,mean_final_distance
+FetchPush-v4,fetch_push_fp32_finetune_control,0,32,32,fp32_finetune,100,0.99,0.97,1.0,-10.07,-11.33,-8.919750000000004,0.02506958501078308
+FetchPush-v4,fetch_push_fp32_finetune_control,1,32,32,fp32_finetune,100,0.99,0.97,1.0,-9.18,-10.29,-8.18,0.024741789846623854
+FetchPush-v4,fetch_push_fp32_finetune_control,2,32,32,fp32_finetune,100,1.0,1.0,1.0,-9.33,-10.17,-8.48,0.02302419863726807
