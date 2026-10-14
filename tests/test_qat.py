@@ -11,7 +11,15 @@ from quantrl.eval.evaluate import evaluation_seeds
 from quantrl.quant.layers import QuantLinear, activation_quantizers, actor_linear_factory
 from quantrl.quant.ptq import collect_calibration_inputs, quantize_actor_post_training
 from quantrl.quant.qat import initialize_agent_from_checkpoint
-from quantrl.sweep import SweepPlan, baseline_rows_for_methods, training_configs
+from quantrl.sweep import (
+    StaleRunError,
+    SweepPlan,
+    baseline_rows_for_methods,
+    evaluate_quantized_run,
+    shared_evaluation_seeds,
+    train_if_missing,
+    training_configs,
+)
 from quantrl.training import train
 from quantrl.viz.video import compose_side_by_side
 
@@ -210,3 +218,39 @@ def test_fp32_rows_are_repeated_for_each_method():
         ("ptq", 4),
     ]
     assert [row["is_fp32_reference"] for row in expanded] == [True, True, False]
+
+
+def test_reusing_a_run_requires_an_identical_config(fp32_run):
+    same = load_config(fp32_run.run_dir / "config.json")
+    assert train_if_missing(same)["reused"]
+    changed = load_config(fp32_run.run_dir / "config.json", ["quant.per_channel_weights=true"])
+    with pytest.raises(StaleRunError, match="quant"):
+        train_if_missing(changed)
+
+
+def test_sweep_uses_one_seed_list_for_every_method(fp32_run, tmp_path):
+    plan = SweepPlan(
+        base_config="configs/fetch_reach.json",
+        fp32_run_dirs=[str(fp32_run.run_dir)],
+        bit_widths=[4],
+        methods=["qat_scratch"],
+    )
+    seeds = shared_evaluation_seeds(plan)
+    assert seeds == list(range(fp32_run.eval.seed_offset, fp32_run.eval.seed_offset + 2))
+    assert len(shared_evaluation_seeds(plan, episodes=5)) == 5
+    scratch = load_config(
+        "configs/fetch_reach.json",
+        [
+            *SMOKE_OVERRIDES,
+            f"output_dir={tmp_path}",
+            "name=scratch_offset",
+            "quant.method=qat_scratch",
+            "quant.weight_bits=4",
+            "quant.activation_bits=4",
+            "eval.seed_offset=5000",
+        ],
+    )
+    train(scratch, verbose=False)
+    row = evaluate_quantized_run(scratch.run_dir, seeds)
+    assert row["first_eval_seed"] == seeds[0]
+    assert row["episodes"] == len(seeds)

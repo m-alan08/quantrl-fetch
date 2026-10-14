@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from quantrl.checkpoint import deterministic_policy_function, load_policy
-from quantrl.config import RunConfig, load_config
+from quantrl.config import RunConfig, config_from_dict, load_config
 from quantrl.envs.factory import make_env
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
 from quantrl.eval.quantized import PTQSetting, evaluate_ptq_settings
@@ -90,9 +90,33 @@ def training_configs(plan: SweepPlan) -> list[RunConfig]:
     return configs
 
 
+def shared_evaluation_seeds(plan: SweepPlan, episodes: int | None = None) -> list[int]:
+    reference = load_config(Path(plan.fp32_run_dirs[0]) / "config.json")
+    return evaluation_seeds(reference.eval.seed_offset, episodes or reference.eval.episodes)
+
+
+class StaleRunError(RuntimeError):
+    pass
+
+
+def check_reusable(config: RunConfig) -> None:
+    saved_path = config.run_dir / "config.json"
+    saved = config_from_dict(json.loads(saved_path.read_text()))
+    if saved != config:
+        saved_values, requested_values = saved.to_dict(), config.to_dict()
+        differing = sorted(
+            key for key in requested_values if saved_values.get(key) != requested_values[key]
+        )
+        raise StaleRunError(
+            f"{config.run_dir} holds a finished run with a different config "
+            f"(sections differing: {differing}). Use another --output-dir or remove that run."
+        )
+
+
 def train_if_missing(config: RunConfig) -> dict[str, Any]:
     summary_path = config.run_dir / "summary.json"
     if summary_path.exists():
+        check_reusable(config)
         summary = json.loads(summary_path.read_text())
         summary["reused"] = True
         return summary
@@ -101,7 +125,7 @@ def train_if_missing(config: RunConfig) -> dict[str, Any]:
     return summary
 
 
-def evaluate_quantized_run(run_dir: str | Path, episodes: int | None = None) -> dict[str, Any]:
+def evaluate_quantized_run(run_dir: str | Path, seeds: Sequence[int]) -> dict[str, Any]:
     loaded = load_policy(Path(run_dir) / "checkpoint.pt")
     config = loaded.config
     env = make_env(config.env)
@@ -110,7 +134,7 @@ def evaluate_quantized_run(run_dir: str | Path, episodes: int | None = None) -> 
             env,
             deterministic_policy_function(loaded.actor),
             loaded.normalizer,
-            evaluation_seeds(config.eval.seed_offset, episodes or config.eval.episodes),
+            list(seeds),
             config.eval.bootstrap_resamples,
             config.eval.confidence,
         )
@@ -126,21 +150,23 @@ def evaluate_quantized_run(run_dir: str | Path, episodes: int | None = None) -> 
         "weight_granularity": "per_channel" if config.quant.per_channel_weights else "per_tensor",
         "weight_bits": config.quant.weight_bits,
         "activation_bits": config.quant.activation_bits,
+        "first_eval_seed": int(seeds[0]),
         **result.to_dict(),
     }
 
 
 def evaluate_fp32_and_ptq(
-    run_dir: str | Path, plan: SweepPlan, episodes: int | None = None
+    run_dir: str | Path, plan: SweepPlan, seeds: Sequence[int]
 ) -> list[dict[str, Any]]:
     loaded = load_policy(fp32_checkpoint(run_dir))
     bit_widths = [FULL_PRECISION_BITS]
     if "ptq" in plan.methods:
         bit_widths += list(plan.bit_widths)
     settings = [PTQSetting(bits, "both", plan.per_channel_weights) for bits in bit_widths]
-    rows = evaluate_ptq_settings(loaded, settings, episodes)
+    rows = evaluate_ptq_settings(loaded, settings, seeds=list(seeds))
     for row in rows:
         row.pop("calibration_inputs", None)
+        row["first_eval_seed"] = int(seeds[0])
     return rows
 
 
@@ -148,6 +174,7 @@ def run_sweep(
     plan: SweepPlan, workers: int = 4, episodes: int | None = None, verbose: bool = True
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     configs = training_configs(plan)
+    seeds = shared_evaluation_seeds(plan, episodes)
     training_summaries = []
     started = time.perf_counter()
     with ProcessPoolExecutor(max_workers=workers) as executor:
@@ -165,11 +192,9 @@ def run_sweep(
                     flush=True,
                 )
         evaluation_futures = [
-            executor.submit(evaluate_fp32_and_ptq, run_dir, plan, episodes)
+            executor.submit(evaluate_fp32_and_ptq, run_dir, plan, seeds)
             for run_dir in plan.fp32_run_dirs
-        ] + [
-            executor.submit(evaluate_quantized_run, config.run_dir, episodes) for config in configs
-        ]
+        ] + [executor.submit(evaluate_quantized_run, config.run_dir, seeds) for config in configs]
         rows: list[dict[str, Any]] = []
         for future in evaluation_futures:
             result = future.result()
