@@ -2,20 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-import numpy as np
-
-from quantrl.checkpoint import deterministic_policy_function, load_policy
-from quantrl.config import QuantConfig
-from quantrl.envs.factory import make_env
-from quantrl.eval.evaluate import evaluation_seeds
-from quantrl.quant.ptq import collect_calibration_inputs, quantize_actor_post_training
-from quantrl.viz.video import (
-    check_same_environment,
-    compose_side_by_side,
-    render_policy_episodes,
-    write_gif,
-    write_video,
-)
+from quantrl.rendering import RENDER_BACKENDS, configure_rendering
 
 METHOD_LABELS = {
     "fp32": "fp32",
@@ -59,6 +46,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--out", required=True, help="Output mp4 path")
     parser.add_argument("--gif", default=None, help="Optional output gif path")
     parser.add_argument("--gif-width", type=int, default=320)
+    parser.add_argument(
+        "--render-backend",
+        default="auto",
+        choices=list(RENDER_BACKENDS),
+        help="auto keeps MUJOCO_GL if set, uses egl on Linux without a display, else the default",
+    )
     return parser.parse_args()
 
 
@@ -71,6 +64,12 @@ def policy_title(config, method: str | None = None, bits: int | None = None) -> 
 
 
 def ptq_actor(loaded, bits: int, per_channel: bool, relu_grid: str):
+    from quantrl.checkpoint import deterministic_policy_function
+    from quantrl.config import QuantConfig
+    from quantrl.envs.factory import make_env
+    from quantrl.eval.evaluate import evaluation_seeds
+    from quantrl.quant.ptq import collect_calibration_inputs, quantize_actor_post_training
+
     config = loaded.config
     env = make_env(config.env)
     try:
@@ -94,6 +93,24 @@ def ptq_actor(loaded, bits: int, per_channel: bool, relu_grid: str):
 
 def main() -> None:
     arguments = parse_arguments()
+    backend = configure_rendering(arguments.render_backend)
+    print(f"render backend: {backend or 'MuJoCo default'}")
+    run(arguments)
+
+
+def run(arguments: argparse.Namespace) -> None:
+    import numpy as np
+
+    from quantrl.checkpoint import deterministic_policy_function, load_policy
+    from quantrl.eval.evaluate import evaluation_seeds
+    from quantrl.viz.video import (
+        check_same_environment,
+        compose_side_by_side,
+        render_policy_episodes,
+        write_gif,
+        write_video,
+    )
+
     loaded = load_policy(arguments.checkpoint)
     config = loaded.config
     if arguments.seeds:
