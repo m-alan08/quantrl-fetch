@@ -34,6 +34,17 @@ def max_quant_level(bits: int) -> int:
     return 2 ** (validate_integer_bits(bits) - 1) - 1
 
 
+def max_unsigned_level(bits: int) -> int:
+    return 2 ** validate_integer_bits(bits) - 1
+
+
+def quantization_range(bits: int, signed: bool) -> tuple[int, int]:
+    if signed:
+        level = max_quant_level(bits)
+        return -level, level
+    return 0, max_unsigned_level(bits)
+
+
 def round_straight_through(values: torch.Tensor) -> torch.Tensor:
     return values + (torch.round(values) - values).detach()
 
@@ -42,8 +53,9 @@ def scale_floor(dtype: torch.dtype) -> float:
     return max(SCALE_FLOOR, torch.finfo(dtype).tiny)
 
 
-def scale_from_max_abs(max_abs: torch.Tensor, bits: int) -> torch.Tensor:
-    return (max_abs / max_quant_level(bits)).clamp_min(scale_floor(max_abs.dtype))
+def scale_from_max_abs(max_abs: torch.Tensor, bits: int, signed: bool = True) -> torch.Tensor:
+    _, high = quantization_range(bits, signed)
+    return (max_abs / high).clamp_min(scale_floor(max_abs.dtype))
 
 
 def weight_scale(weight: torch.Tensor, bits: int, per_channel: bool) -> torch.Tensor:
@@ -63,11 +75,13 @@ def dequantize(integers: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
     return integers * scale
 
 
-def fake_quantize(values: torch.Tensor, scale: torch.Tensor, bits: int) -> torch.Tensor:
+def fake_quantize(
+    values: torch.Tensor, scale: torch.Tensor, bits: int, signed: bool = True
+) -> torch.Tensor:
     if is_full_precision(validate_bits(bits)):
         return values
-    level = max_quant_level(bits)
-    integers = torch.clamp(round_straight_through(values / scale), -level, level)
+    low, high = quantization_range(bits, signed)
+    integers = torch.clamp(round_straight_through(values / scale), low, high)
     return integers * scale
 
 

@@ -21,6 +21,7 @@ from quantrl.quant.quantizer import (
     fake_quantize_weight,
     max_quant_level,
     quantize_symmetric,
+    scale_from_max_abs,
     validate_bits,
     weight_scale,
 )
@@ -318,3 +319,73 @@ def test_quantized_actor_trains_through_sac_style_loss():
         optimizer.step()
         losses.append(loss.item())
     assert np.mean(losses[-10:]) < np.mean(losses[:10])
+
+
+@pytest.mark.parametrize("bits", [8, 4, 3, 2])
+def test_unsigned_grid_uses_all_two_to_the_bits_levels_from_zero(bits):
+    values = torch.linspace(-1.0, 10.0, 5000)
+    high = 2**bits - 1
+    scale = torch.tensor(10.0 / high)
+    quantized = fake_quantize(values, scale, bits, signed=False)
+    integers = torch.round(quantized / scale)
+    assert integers.min() == 0
+    assert integers.max() == high
+    assert torch.unique(integers).numel() == 2**bits
+    assert torch.all(quantized[values < 0] == 0)
+
+
+def test_unsigned_grid_saturates_outside_its_range():
+    values = torch.tensor([-0.5, 0.0, 0.2, 2.9, 4.0])
+    quantized = fake_quantize(values, torch.tensor(1.0), bits=2, signed=False)
+    assert quantized.tolist() == [0.0, 0.0, 0.0, 3.0, 3.0]
+
+
+def test_signed_grid_saturates_at_the_largest_level():
+    values = torch.tensor([-9.0, -1.4, 1.4, 9.0])
+    quantized = fake_quantize(values, torch.tensor(1.0), bits=3)
+    assert quantized.tolist() == [-3.0, -1.0, 1.0, 3.0]
+
+
+def test_unsigned_scale_divides_by_the_unsigned_top_level():
+    max_abs = torch.tensor(7.0)
+    torch.testing.assert_close(scale_from_max_abs(max_abs, 3, signed=False), torch.tensor(1.0))
+    torch.testing.assert_close(scale_from_max_abs(max_abs, 3, signed=True), torch.tensor(7.0 / 3.0))
+
+
+@pytest.mark.parametrize("grid, hidden_signed", [("unsigned", False), ("signed", True)])
+def test_only_inputs_that_come_out_of_a_relu_use_the_unsigned_grid(grid, hidden_signed):
+    actor = build_quantized_actor(
+        13, 4, SAC_CONFIG, QuantConfig(weight_bits=4, activation_bits=4, relu_activation_grid=grid)
+    )
+    layers = [layer for layer in actor.network if isinstance(layer, QuantLinear)]
+    assert layers[0].input_quantizer.signed
+    assert all(layer.input_quantizer.signed == hidden_signed for layer in layers[1:])
+
+
+def test_unsigned_grid_gives_post_relu_activations_twice_the_levels():
+    relu_outputs = torch.relu(random_tensor(4096, scale=2.0))
+    counts = {}
+    for signed in (True, False):
+        quantizer = ActivationQuantizer(3, signed=signed)
+        quantizer.train()
+        counts[signed] = torch.unique(quantizer(relu_outputs)).numel()
+    assert counts[True] == 4
+    assert counts[False] == 8
+
+
+def test_invalid_relu_grid_is_rejected():
+    with pytest.raises(ValueError, match="relu_activation_grid"):
+        build_quantized_actor(
+            13, 4, SAC_CONFIG, QuantConfig(weight_bits=4, relu_activation_grid="unsigned8")
+        )
+
+
+def test_ptq_at_32_bits_is_still_exact_with_the_unsigned_grid():
+    fp32_actor = make_fp32_actor()
+    quantized_actor = quantize_actor_post_training(
+        fp32_actor, SAC_CONFIG, QuantConfig(relu_activation_grid="unsigned"), calibration_batch()
+    )
+    inputs = calibration_batch(seed=7, rows=64)
+    assert torch.equal(
+        fp32_actor.deterministic_action(inputs), quantized_actor.deterministic_action(inputs)
+    )

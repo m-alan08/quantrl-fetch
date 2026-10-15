@@ -37,3 +37,19 @@ def test_non_object_sections_are_rejected(tmp_path, section_value):
 
 def test_shipped_configs_load():
     assert load_config("configs/fetch_reach.json").env.env_id == "FetchReach-v4"
+
+
+def test_saved_quantized_configs_without_a_grid_are_read_as_the_old_signed_grid():
+    from quantrl.config import saved_config_from_dict
+
+    legacy = RunConfig().to_dict()
+    legacy["quant"].pop("relu_activation_grid")
+    legacy["quant"].update(weight_bits=4, activation_bits=4)
+    assert saved_config_from_dict(legacy).quant.relu_activation_grid == "signed"
+    fp32 = RunConfig().to_dict()
+    fp32["quant"].pop("relu_activation_grid")
+    assert saved_config_from_dict(fp32).quant.relu_activation_grid == "unsigned"
+    current = RunConfig().to_dict()
+    current["quant"].update(weight_bits=4, activation_bits=4, relu_activation_grid="unsigned")
+    assert saved_config_from_dict(current).quant.relu_activation_grid == "unsigned"
+    assert load_config(None, []).quant.relu_activation_grid == "unsigned"

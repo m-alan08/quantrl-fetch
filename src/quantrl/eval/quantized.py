@@ -21,6 +21,7 @@ class PTQSetting:
     bits: int
     target: str
     per_channel_weights: bool
+    relu_activation_grid: str = "unsigned"
 
     def quant_config(self, base: QuantConfig) -> QuantConfig:
         if self.target not in QUANTIZATION_TARGETS:
@@ -35,6 +36,7 @@ class PTQSetting:
             per_channel_weights=self.per_channel_weights,
             activation_ema_momentum=base.activation_ema_momentum,
             quantize_critics=False,
+            relu_activation_grid=self.relu_activation_grid,
         )
 
 
@@ -42,14 +44,18 @@ def ptq_settings(
     bit_widths: Sequence[int],
     targets: Sequence[str] = ("both",),
     per_channel_options: Sequence[bool] = (False,),
+    relu_activation_grids: Sequence[str] = ("unsigned",),
 ) -> list[PTQSetting]:
     settings = []
-    for target in targets:
-        for per_channel in per_channel_options:
-            for bits in bit_widths:
-                if target == "activations" and per_channel:
-                    continue
-                settings.append(PTQSetting(bits, target, per_channel))
+    for grid in relu_activation_grids:
+        for target in targets:
+            for per_channel in per_channel_options:
+                for bits in bit_widths:
+                    if target == "activations" and per_channel:
+                        continue
+                    if target == "weights" and grid != relu_activation_grids[0]:
+                        continue
+                    settings.append(PTQSetting(bits, target, per_channel, grid))
     return settings
 
 
@@ -98,6 +104,7 @@ def evaluate_ptq_settings(
                     else "per_tensor",
                     "weight_bits": quant_config.weight_bits,
                     "activation_bits": quant_config.activation_bits,
+                    "relu_activation_grid": setting.relu_activation_grid,
                     "calibration_inputs": int(np.asarray(calibration_inputs).shape[0]),
                     **result.to_dict(),
                 }

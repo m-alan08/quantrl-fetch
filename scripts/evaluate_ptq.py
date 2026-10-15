@@ -10,7 +10,15 @@ from quantrl.checkpoint import load_policy
 from quantrl.eval.quantized import QUANTIZATION_TARGETS, evaluate_ptq_settings, ptq_settings
 from quantrl.eval.stats import aggregate_across_seeds
 
-GROUP_COLUMNS = ["env_id", "name", "method", "bits", "target", "weight_granularity"]
+GROUP_COLUMNS = [
+    "env_id",
+    "name",
+    "method",
+    "bits",
+    "target",
+    "weight_granularity",
+    "relu_activation_grid",
+]
 SUMMARY_METRICS = ("success_rate", "mean_return", "mean_final_distance")
 
 
@@ -30,6 +38,13 @@ def parse_arguments() -> argparse.Namespace:
         choices=["per_tensor", "per_channel"],
         help="Weight scale granularity",
     )
+    parser.add_argument(
+        "--relu-grid",
+        nargs="+",
+        default=["unsigned"],
+        choices=["unsigned", "signed"],
+        help="Grid for activations that come out of a ReLU",
+    )
     parser.add_argument("--episodes", type=int, default=None)
     parser.add_argument("--out", required=True, help="Tidy per-seed CSV")
     parser.add_argument("--summary", default=None, help="Aggregate CSV across training seeds")
@@ -42,6 +57,7 @@ def main() -> None:
         arguments.bits,
         arguments.targets,
         [granularity == "per_channel" for granularity in arguments.granularity],
+        arguments.relu_grid,
     )
     rows = []
     for checkpoint_path in arguments.checkpoints:

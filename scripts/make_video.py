@@ -44,6 +44,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Right-hand policy is the left checkpoint quantized with PTQ at this bit width",
     )
     parser.add_argument("--per-tensor", action="store_true", help="PTQ with per-tensor weights")
+    parser.add_argument(
+        "--relu-grid",
+        default="unsigned",
+        choices=["unsigned", "signed"],
+        help="PTQ grid for activations that come out of a ReLU",
+    )
     parser.add_argument("--episodes", type=int, default=4)
     parser.add_argument("--first-eval-seed", type=int, default=None)
     parser.add_argument("--seeds", type=int, nargs="+", default=None, help="Explicit env seeds")
@@ -64,7 +70,7 @@ def policy_title(config, method: str | None = None, bits: int | None = None) -> 
     return f"{bits}-bit {METHOD_LABELS.get(method, method)}"
 
 
-def ptq_actor(loaded, bits: int, per_channel: bool):
+def ptq_actor(loaded, bits: int, per_channel: bool, relu_grid: str):
     config = loaded.config
     env = make_env(config.env)
     try:
@@ -77,7 +83,11 @@ def ptq_actor(loaded, bits: int, per_channel: bool):
     finally:
         env.close()
     quant_config = QuantConfig(
-        method="ptq", weight_bits=bits, activation_bits=bits, per_channel_weights=per_channel
+        method="ptq",
+        weight_bits=bits,
+        activation_bits=bits,
+        per_channel_weights=per_channel,
+        relu_activation_grid=relu_grid,
     )
     return quantize_actor_post_training(loaded.actor, config.sac, quant_config, calibration_inputs)
 
@@ -97,7 +107,9 @@ def main() -> None:
     left_actor = loaded.actor
     left_title = arguments.title or policy_title(config)
     if arguments.ptq_bits:
-        left_actor = ptq_actor(loaded, arguments.ptq_bits, not arguments.per_tensor)
+        left_actor = ptq_actor(
+            loaded, arguments.ptq_bits, not arguments.per_tensor, arguments.relu_grid
+        )
         left_title = arguments.title or policy_title(config, "ptq", arguments.ptq_bits)
     left_frames, left_outcomes = render_policy_episodes(
         config.env,
@@ -117,7 +129,9 @@ def main() -> None:
             right_actor, right_normalizer = compared.actor, compared.normalizer
             right_title = policy_title(compared.config)
         else:
-            right_actor = ptq_actor(loaded, arguments.compare_ptq_bits, not arguments.per_tensor)
+            right_actor = ptq_actor(
+                loaded, arguments.compare_ptq_bits, not arguments.per_tensor, arguments.relu_grid
+            )
             right_normalizer = loaded.normalizer
             right_title = policy_title(config, "ptq", arguments.compare_ptq_bits)
         right_frames, right_outcomes = render_policy_episodes(

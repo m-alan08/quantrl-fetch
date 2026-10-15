@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from quantrl.checkpoint import deterministic_policy_function, load_policy
-from quantrl.config import RunConfig, config_from_dict, load_config
+from quantrl.config import RunConfig, load_config, saved_config_from_dict
 from quantrl.envs.factory import make_env
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
 from quantrl.eval.quantized import PTQSetting, evaluate_ptq_settings
@@ -26,6 +26,7 @@ class SweepPlan:
     bit_widths: list[int]
     methods: list[str]
     per_channel_weights: bool = True
+    relu_activation_grid: str = "unsigned"
     output_dir: str = "runs"
     finetune_overrides: list[str] = field(default_factory=list)
     scratch_overrides: list[str] = field(default_factory=list)
@@ -60,6 +61,7 @@ def quantization_overrides(plan: SweepPlan, method: str, bits: int) -> list[str]
         f"quant.weight_bits={bits}",
         f"quant.activation_bits={bits}",
         f"quant.per_channel_weights={json.dumps(plan.per_channel_weights)}",
+        f"quant.relu_activation_grid={plan.relu_activation_grid}",
         f"output_dir={plan.output_dir}",
     ]
 
@@ -111,7 +113,7 @@ class StaleRunError(RuntimeError):
 
 def check_reusable(config: RunConfig) -> None:
     saved_path = config.run_dir / "config.json"
-    saved = config_from_dict(json.loads(saved_path.read_text()))
+    saved = saved_config_from_dict(json.loads(saved_path.read_text()))
     if saved != config:
         saved_values, requested_values = saved.to_dict(), config.to_dict()
         differing = sorted(
@@ -158,6 +160,7 @@ def evaluate_quantized_run(run_dir: str | Path, seeds: Sequence[int]) -> dict[st
         "bits": config.quant.weight_bits,
         "target": "both",
         "weight_granularity": "per_channel" if config.quant.per_channel_weights else "per_tensor",
+        "relu_activation_grid": config.quant.relu_activation_grid,
         "weight_bits": config.quant.weight_bits,
         "activation_bits": config.quant.activation_bits,
         "first_eval_seed": int(seeds[0]),
@@ -172,7 +175,10 @@ def evaluate_fp32_and_ptq(
     bit_widths = [FULL_PRECISION_BITS]
     if "ptq" in plan.methods:
         bit_widths += list(plan.bit_widths)
-    settings = [PTQSetting(bits, "both", plan.per_channel_weights) for bits in bit_widths]
+    settings = [
+        PTQSetting(bits, "both", plan.per_channel_weights, plan.relu_activation_grid)
+        for bits in bit_widths
+    ]
     rows = evaluate_ptq_settings(loaded, settings, seeds=list(seeds))
     for row in rows:
         row.pop("calibration_inputs", None)

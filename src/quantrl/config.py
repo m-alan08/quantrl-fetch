@@ -24,6 +24,7 @@ class QuantConfig:
     per_channel_weights: bool = False
     activation_ema_momentum: float = 0.99
     quantize_critics: bool = False
+    relu_activation_grid: str = "unsigned"
 
 
 @dataclass
@@ -114,6 +115,14 @@ def _build_dataclass(cls: type, values: dict[str, Any]) -> Any:
 
 def config_from_dict(values: dict[str, Any]) -> RunConfig:
     return _build_dataclass(RunConfig, values)
+
+
+def saved_config_from_dict(values: dict[str, Any]) -> RunConfig:
+    quant = values.get("quant", {})
+    quantized = quant.get("weight_bits", 32) != 32 or quant.get("activation_bits", 32) != 32
+    if quantized and "relu_activation_grid" not in quant:
+        values = {**values, "quant": {**quant, "relu_activation_grid": "signed"}}
+    return config_from_dict(values)
 
 
 def _parse_override_value(raw: str) -> Any:

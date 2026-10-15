@@ -7,7 +7,7 @@ from typing import Any
 import torch
 
 from quantrl.algos.networks import GaussianActor, LinearFactory
-from quantrl.config import RunConfig, config_from_dict
+from quantrl.config import RunConfig, saved_config_from_dict
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.quant.layers import actor_linear_factory
 
@@ -50,7 +50,7 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
 def build_actor_from_checkpoint(
     checkpoint: dict[str, Any], linear_factory: LinearFactory | None = None
 ) -> GaussianActor:
-    config = config_from_dict(checkpoint["config"])
+    config = saved_config_from_dict(checkpoint["config"])
     dimensions = checkpoint["dimensions"]
     if linear_factory is None:
         linear_factory = actor_linear_factory(config.quant)
@@ -69,7 +69,7 @@ def build_actor_from_checkpoint(
 
 def load_policy(path: str | Path) -> LoadedPolicy:
     checkpoint = load_checkpoint(path)
-    config = config_from_dict(checkpoint["config"])
+    config = saved_config_from_dict(checkpoint["config"])
     dimensions = checkpoint["dimensions"]
     normalizer = GoalObservationNormalizer(
         dimensions["observation_dim"],
