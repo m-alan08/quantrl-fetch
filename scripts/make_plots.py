@@ -29,31 +29,47 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--targets", nargs="+", default=None, help="Quantization targets to include"
     )
+    parser.add_argument(
+        "--relu-grids",
+        nargs="+",
+        choices=["unsigned", "signed"],
+        default=None,
+        help="ReLU activation grids to include; weights-only rows are always kept",
+    )
     parser.add_argument("--out", required=True, help="Output image path")
     parser.add_argument("--title", default="")
     parser.add_argument("--csv", default=None, help="Optional path for the combined progress CSV")
     return parser.parse_args()
 
 
-def series_label(row: pd.Series, show_grid: bool = False) -> str:
+def series_label(row: pd.Series, show_grid: bool = False, show_target: bool = True) -> str:
     target = TARGET_LABELS[row["target"]]
-    if row["target"] == "activations":
-        label = target
-    else:
-        label = f"{target}, {GRANULARITY_LABELS[row['weight_granularity']]} weights"
+    parts = [target] if show_target or row["target"] == "activations" else []
+    if row["target"] != "activations":
+        parts.append(f"{GRANULARITY_LABELS[row['weight_granularity']]} weights")
     if show_grid and row["target"] != "weights":
-        label += f", {row['relu_activation_grid']} ReLU grid"
-    return label
+        parts.append(f"{row['relu_activation_grid']} ReLU grid")
+    return ", ".join(parts)
 
 
 def plot_ptq(arguments: argparse.Namespace) -> None:
     frame = pd.read_csv(arguments.ptq_csv)
     if arguments.targets:
         frame = frame[frame["target"].isin(arguments.targets)]
+    if arguments.relu_grids:
+        keep = (frame["target"] == "weights") | frame["relu_activation_grid"].isin(
+            arguments.relu_grids
+        )
+        frame = frame[keep]
+    if frame.empty:
+        raise SystemExit("No PTQ rows match the requested targets and ReLU grids")
     show_grid = (
         "relu_activation_grid" in frame.columns and frame["relu_activation_grid"].nunique() > 1
     )
-    frame = frame.assign(series=frame.apply(series_label, axis=1, show_grid=show_grid))
+    show_target = frame["target"].nunique() > 1
+    frame = frame.assign(
+        series=frame.apply(series_label, axis=1, show_grid=show_grid, show_target=show_target)
+    )
     present = list(dict.fromkeys(frame["series"]))
     plot_success_vs_bits(frame, arguments.out, arguments.title, "series", present)
 

@@ -106,6 +106,65 @@ def test_ptq_plot_from_a_fake_ptq_grid(tmp_path, grids):
     assert_png(output)
 
 
+def write_fake_ptq_grid(path):
+    rows = []
+    for grid in ("signed", "unsigned"):
+        for target in ("both", "activations"):
+            rows += fake_bit_rows(
+                ["ptq"],
+                {
+                    "target": target,
+                    "weight_granularity": "per_channel",
+                    "relu_activation_grid": grid,
+                },
+            )
+    rows += fake_bit_rows(
+        ["ptq"],
+        {
+            "target": "weights",
+            "weight_granularity": "per_channel",
+            "relu_activation_grid": "unsigned",
+        },
+    )
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def test_ptq_plot_filtered_to_one_relu_grid_keeps_weights_only_rows(tmp_path):
+    ptq = tmp_path / "ptq.csv"
+    write_fake_ptq_grid(ptq)
+    output = tmp_path / "signed.png"
+    run_plot_script(
+        "--ptq-csv", str(ptq), "--relu-grids", "signed", "--out", str(output), "--title", "fake"
+    )
+    assert_png(output)
+
+
+def test_ptq_plot_with_no_matching_rows_fails_with_a_message(tmp_path):
+    ptq = tmp_path / "ptq.csv"
+    rows = fake_bit_rows(
+        ["ptq"],
+        {"target": "both", "weight_granularity": "per_channel", "relu_activation_grid": "unsigned"},
+    )
+    pd.DataFrame(rows).to_csv(ptq, index=False)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/make_plots.py",
+            "--ptq-csv",
+            str(ptq),
+            "--relu-grids",
+            "signed",
+            "--out",
+            str(tmp_path / "x.png"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert completed.returncode != 0
+    assert "No PTQ rows match" in completed.stderr
+
+
 def test_plot_script_without_inputs_fails_with_a_message(tmp_path):
     completed = subprocess.run(
         [sys.executable, "scripts/make_plots.py", "--out", str(tmp_path / "x.png")],
