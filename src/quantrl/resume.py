@@ -14,7 +14,13 @@ from quantrl.config import RunConfig, saved_config_from_dict
 
 RESUME_FILE_NAME = "resume_state.pt"
 RESUME_FORMAT_VERSION = 1
-FIELDS_ALLOWED_TO_CHANGE = (("train", "total_steps"), ("train", "resume"))
+FIELDS_ALLOWED_TO_CHANGE = (
+    ("train", "total_steps"),
+    ("train", "resume"),
+    ("logging", "wandb"),
+    ("logging", "wandb_mode"),
+    ("logging", "wandb_project"),
+)
 
 
 class ResumeMismatchError(ValueError):
@@ -100,7 +106,7 @@ def check_resume_compatible(saved_config: dict[str, Any], config: RunConfig) -> 
     if differences:
         raise ResumeMismatchError(
             "Cannot resume: the config differs from the saved run in fields that must stay "
-            "the same (only train.total_steps may change):\n"
+            "the same (only train.total_steps and the logging settings may change):\n"
             + "\n".join(f"  - {difference}" for difference in differences)
         )
 

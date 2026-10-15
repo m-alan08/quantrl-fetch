@@ -28,6 +28,7 @@ cpu = ["torch==2.14.1"]
 cu126 = ["torch==2.14.1"]
 cu130 = ["torch==2.14.1"]
 rocm = ["torch==2.14.1", "triton-rocm"]
+wandb = ["wandb>=0.17"]
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]

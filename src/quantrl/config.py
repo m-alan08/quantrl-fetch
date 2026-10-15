@@ -76,6 +76,13 @@ class EvalConfig:
 
 
 @dataclass
+class LoggingConfig:
+    wandb: bool = False
+    wandb_mode: str = "offline"
+    wandb_project: str = "quantrl-fetch"
+
+
+@dataclass
 class RunConfig:
     name: str = "fetch_reach_fp32"
     seed: int = 0
@@ -89,6 +96,7 @@ class RunConfig:
     quant: QuantConfig = field(default_factory=QuantConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -121,6 +129,7 @@ QUANT_METHODS = ("fp32", "fp32_finetune", "ptq", "qat_finetune", "qat_scratch")
 FULL_PRECISION_METHODS = ("fp32", "fp32_finetune")
 RELU_GRIDS = ("signed", "unsigned")
 DEVICE_NAMES = ("auto", "cpu", "cuda", "mps")
+WANDB_MODES = ("offline", "online", "disabled")
 FULL_PRECISION_BITS = 32
 MIN_BITS = 2
 MAX_BITS = 16
@@ -320,6 +329,13 @@ def validate_config(config: RunConfig) -> RunConfig:
             f"evaluation uses [{evaluation.seed_offset}, {evaluation_end}), "
             f"calibration uses [{evaluation.calibration_seed_offset}, {calibration_end})",
         )
+
+    check.boolean("logging.wandb", config.logging.wandb)
+    check.require(
+        config.logging.wandb_mode in WANDB_MODES,
+        f"logging.wandb_mode must be one of {WANDB_MODES}, got {config.logging.wandb_mode!r}",
+    )
+    check.text("logging.wandb_project", config.logging.wandb_project)
 
     if check.problems:
         raise ConfigError(

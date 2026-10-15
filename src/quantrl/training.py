@@ -41,6 +41,7 @@ from quantrl.resume import (
 from quantrl.utils.device import describe_device, resolve_device
 from quantrl.utils.run_info import collect_run_metadata
 from quantrl.utils.seeding import seed_everything
+from quantrl.utils.wandb_logging import WandbLogger
 
 
 class ProgressLog:
@@ -249,6 +250,7 @@ def train(
     elif config.train.resume and verbose:
         print(f"[{config.name} seed {config.seed}] no saved state to resume, starting fresh")
     (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    wandb_logger = WandbLogger(config, run_dir)
     start_time = time.perf_counter()
 
     def checkpoint(path: Path) -> None:
@@ -314,6 +316,7 @@ def train(
             },
         }
         progress.write(row)
+        wandb_logger.log(row)
         if verbose:
             print(
                 f"[{config.name} seed {config.seed}] step {total_steps:>7d} "
@@ -382,6 +385,7 @@ def train(
         "final_eval": final_result.to_dict(),
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    wandb_logger.finish(summary)
     env.close()
     eval_env.close()
     return summary
