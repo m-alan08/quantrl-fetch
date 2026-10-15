@@ -1,6 +1,6 @@
 # Design
 
-This document describes what the code in this repository actually does, stage by stage, for a reader who knows reinforcement learning and quantization but does not want to read the code. Every statement about behavior was checked against the source on the `audit-hardening` branch, which starts from main at commit `d9fcb67`. Where something was measured, the command and result are given. Changes made on this branch so far: the unsigned activation grid after ReLU (concern B) and the straight-through estimator's gradient at the outermost grid levels (concern H), both fixed at your request.
+This document describes what the code in this repository actually does, stage by stage, for a reader who knows reinforcement learning and quantization but does not want to read the code. Every statement about behavior was checked against the source on the `audit-hardening` branch, which starts from main at commit `d9fcb67`. Where something was measured, the command and result are given. Changes made on this branch so far: the unsigned activation grid after ReLU (concern B) and the straight-through estimator's gradient at the outermost grid levels (concern H), both fixed at your request. Every QAT sweep and PTQ grid was then rerun with both fixes on the `qat-rerun` branch; the README reports the new results next to the earlier ones.
 
 Baseline at the start of the audit (run on the development Mac, Apple M5, 16 GB, macOS):
 
@@ -228,7 +228,7 @@ Inside the range the error is at most s / 2; outside it, values saturate at the 
 
 **Old runs.** Every quantized result produced before this branch used the signed grid for everything. A saved run or checkpoint that used quantization and has no `relu_activation_grid` field is read as `"signed"`, so it rebuilds exactly as it was trained. Re-evaluating three old QAT checkpoints this way reproduced their recorded success rate, return, and final distance exactly, and rerunning PTQ with the signed grid reproduced all 36 recorded per-channel PTQ success rates (3 seeds, 6 bit widths, both tasks) exactly.
 
-**Measured effect of the unsigned grid on PTQ** (per-channel weights, weights and activations at the same width, mean success over 3 seeds and 100 episodes; outputs in `runs/audit/`, not committed):
+**Measured effect of the unsigned grid on PTQ** (per-channel weights, weights and activations at the same width, mean success over 3 seeds and 100 episodes; first measured in `runs/audit/`, and reproduced exactly by the committed PTQ result files, which now contain both grids):
 
 | Bits | FetchReach signed | FetchReach unsigned | FetchPush signed | FetchPush unsigned |
 | --- | --- | --- | --- | --- |
@@ -375,12 +375,12 @@ Decisions so far:
 | Concern | Decision |
 | --- | --- |
 | A. Critic target clipping | Kept as is. All reported results used it. |
-| B. Symmetric grid after ReLU | Fixed on this branch: post-ReLU inputs use the unsigned grid by default. Results produced before the fix used the signed grid and are labeled as such. |
+| B. Symmetric grid after ReLU | Fixed on this branch: post-ReLU inputs use the unsigned grid by default. All committed results now use it; the PTQ result files also include the signed grid for comparison. |
 | C. What "an N-bit actor" means | Kept, and stated wherever results are quoted. |
 | D. PTQ calibration choices | Kept as is. |
 | E. Unequal training budgets | Intended: PTQ, a short fine-tune, and full training from scratch are the three points being compared. |
 | F, G | Noted; no change. |
-| H. Zero STE gradient at the outermost grid levels | Fixed on this branch. QAT results produced before the fix are stale and need rerunning. |
+| H. Zero STE gradient at the outermost grid levels | Fixed on this branch. Both QAT sweeps were rerun with the fix. |
 
 The original descriptions follow.
 
@@ -410,7 +410,7 @@ Changing it would require rerunning every experiment.
 
 **B. Symmetric activation grid after ReLU.**
 
-Hidden-layer inputs are outputs of ReLU, so they are never negative, but the grid is symmetric, so half the levels are never used. At 3 bits a hidden activation can take only 4 distinct values (0, s, 2s, 3s) instead of 7. An unsigned grid for post-ReLU inputs would effectively give one extra bit. The symmetric grid matches the original specification. This probably makes the 3 and 4 bit results more pessimistic than an unsigned design would.
+Hidden-layer inputs are outputs of ReLU, so they are never negative, but the grid is symmetric, so half the levels are never used. At 3 bits a hidden activation can take only 4 distinct values (0, s, 2s, 3s) instead of 7. An unsigned grid for post-ReLU inputs would effectively give one extra bit. The symmetric grid matches the original specification. This probably makes the 3 and 4 bit results more pessimistic than an unsigned design would. Measured after the fix: that held at 4 to 6 bits but not at 3 bits, where the unsigned grid scored lower on FetchReach for PTQ (43.0 to 36.0 percent) and both QAT methods.
 
 **C. What "an N-bit actor" means here.**
 
@@ -434,7 +434,7 @@ PTQ gets no extra training, QAT fine-tuning gets 10 percent of the baseline's st
 
 **F. Statistical strength.**
 
-Every comparison uses 3 training seeds and 100 evaluation episodes per seed. Interval estimates across seeds are coarse. Some FetchPush differences, such as 4-bit PTQ at 14.7 percent against QAT fine-tuning at 10.7 percent, are within the seed-to-seed spread.
+Every comparison uses 3 training seeds and 100 evaluation episodes per seed. Interval estimates across seeds are coarse. Some differences are within the seed-to-seed spread: FetchReach QAT fine-tuning at 3 bits scored 50.3 percent before the fixes (seeds 42 to 60) and 44.3 after (seeds 40 to 49).
 
 **G. Success is measured at the final step only.**
 
@@ -459,6 +459,6 @@ How much it matters, measured on the trained seed-0 actors:
 - **Interaction with fix B:** on the unsigned grid, 0 is the bottom edge. Every small positive activation that rounds to 0 would get no gradient: 22 percent of them at 4 bits on FetchReach and 36 percent on FetchPush. QAT with the unsigned grid should not be run until this is decided.
 - PTQ is unaffected, since it uses no gradients.
 
-**Decision: fixed.** The gradient mask now comes from the rounded level. Measured after the fix, on the same trained seed-0 actors: 0.00 percent of weights (per-channel) and 0.00 percent of positive post-ReLU activations (unsigned grid) get zero gradient from the quantizer, at every bit width from 8 to 2 on both tasks. Forward values did not change: two old QAT checkpoints re-evaluated after the fix gave exactly their recorded results. Every QAT result produced before the fix is stale. Rerunning the FetchReach sweep takes about 45 minutes and the FetchPush sweep about 6 hours on this Mac.
+**Decision: fixed.** The gradient mask now comes from the rounded level. Measured after the fix, on the same trained seed-0 actors: 0.00 percent of weights (per-channel) and 0.00 percent of positive post-ReLU activations (unsigned grid) get zero gradient from the quantizer, at every bit width from 8 to 2 on both tasks. Forward values did not change: two old QAT checkpoints re-evaluated after the fix gave exactly their recorded results. Every QAT result produced before the fix was stale, so both sweeps were rerun with the unsigned grid and this fix: the FetchReach sweep took 1,344 seconds and the FetchPush sweep 24,599 seconds with 9 workers on this Mac. The README has the new results and the earlier ones side by side.
 
 **Observation, not a concern.** While checking H, a full backward pass through the trained fp32 actors showed many weights with zero gradient even without quantization. The cause is ReLU units that never activate on the states the policy visits: 7.8 and 77.0 percent of the two hidden layers in the FetchReach actor, and 10.2, 40.2, and 25.4 percent of the three hidden layers in the FetchPush actor (seed 0, 1,000 calibration states). Saturated actions are rare: the deterministic action exceeds 0.999 in magnitude on at most 5 percent of visited states, and the tanh gradient is exactly zero in float32 on at most 0.2 percent. Inactive units are a normal property of trained ReLU networks, but they mean the actor uses fewer units than its nominal width.

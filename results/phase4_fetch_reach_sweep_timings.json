@@ -1,256 +1,256 @@
 {
-  "sweep_wall_seconds": 2728.0,
-  "workers": 4,
+  "sweep_wall_seconds": 1343.7,
+  "workers": 9,
   "runs": [
     {
       "name": "fetch_reach_fp32_qat_finetune_w2a2",
       "seed": 0,
-      "train_wall_seconds": 93.79,
+      "train_wall_seconds": 139.9,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w2a2",
       "seed": 1,
-      "train_wall_seconds": 92.95,
+      "train_wall_seconds": 166.49,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w2a2",
       "seed": 2,
-      "train_wall_seconds": 237.09,
+      "train_wall_seconds": 146.13,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w3a3",
       "seed": 0,
-      "train_wall_seconds": 98.94,
+      "train_wall_seconds": 140.97,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w3a3",
       "seed": 1,
-      "train_wall_seconds": 85.5,
+      "train_wall_seconds": 147.87,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w3a3",
       "seed": 2,
-      "train_wall_seconds": 210.18,
+      "train_wall_seconds": 151.6,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w4a4",
       "seed": 0,
-      "train_wall_seconds": 83.92,
+      "train_wall_seconds": 142.56,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w4a4",
       "seed": 1,
-      "train_wall_seconds": 85.69,
+      "train_wall_seconds": 146.53,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w4a4",
       "seed": 2,
-      "train_wall_seconds": 153.7,
+      "train_wall_seconds": 149.38,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w5a5",
       "seed": 0,
-      "train_wall_seconds": 80.42,
+      "train_wall_seconds": 142.24,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w5a5",
       "seed": 1,
-      "train_wall_seconds": 87.55,
+      "train_wall_seconds": 149.34,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w5a5",
       "seed": 2,
-      "train_wall_seconds": 193.34,
+      "train_wall_seconds": 149.52,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w6a6",
       "seed": 0,
-      "train_wall_seconds": 91.63,
+      "train_wall_seconds": 141.0,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w6a6",
       "seed": 1,
-      "train_wall_seconds": 78.31,
+      "train_wall_seconds": 145.33,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w6a6",
       "seed": 2,
-      "train_wall_seconds": 249.57,
+      "train_wall_seconds": 163.77,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w8a8",
       "seed": 0,
-      "train_wall_seconds": 91.81,
+      "train_wall_seconds": 140.57,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w8a8",
       "seed": 1,
-      "train_wall_seconds": 85.89,
+      "train_wall_seconds": 140.61,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_finetune_w8a8",
       "seed": 2,
-      "train_wall_seconds": 96.71,
+      "train_wall_seconds": 160.9,
       "total_steps": 10000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w2a2",
       "seed": 0,
-      "train_wall_seconds": 267.1,
+      "train_wall_seconds": 442.54,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w2a2",
       "seed": 1,
-      "train_wall_seconds": 445.4,
+      "train_wall_seconds": 459.98,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w2a2",
       "seed": 2,
-      "train_wall_seconds": 621.14,
+      "train_wall_seconds": 220.0,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w3a3",
       "seed": 0,
-      "train_wall_seconds": 279.03,
+      "train_wall_seconds": 436.34,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w3a3",
       "seed": 1,
-      "train_wall_seconds": 266.88,
+      "train_wall_seconds": 465.96,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w3a3",
       "seed": 2,
-      "train_wall_seconds": 653.15,
+      "train_wall_seconds": 307.62,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w4a4",
       "seed": 0,
-      "train_wall_seconds": 281.42,
+      "train_wall_seconds": 429.17,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w4a4",
       "seed": 1,
-      "train_wall_seconds": 263.32,
+      "train_wall_seconds": 470.25,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w4a4",
       "seed": 2,
-      "train_wall_seconds": 627.66,
+      "train_wall_seconds": 317.08,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w5a5",
       "seed": 0,
-      "train_wall_seconds": 264.33,
+      "train_wall_seconds": 432.07,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w5a5",
       "seed": 1,
-      "train_wall_seconds": 263.67,
+      "train_wall_seconds": 464.15,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w5a5",
       "seed": 2,
-      "train_wall_seconds": 564.72,
+      "train_wall_seconds": 395.27,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w6a6",
       "seed": 0,
-      "train_wall_seconds": 256.08,
+      "train_wall_seconds": 429.56,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w6a6",
       "seed": 1,
-      "train_wall_seconds": 255.61,
+      "train_wall_seconds": 462.96,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w6a6",
       "seed": 2,
-      "train_wall_seconds": 609.19,
+      "train_wall_seconds": 396.08,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w8a8",
       "seed": 0,
-      "train_wall_seconds": 259.08,
+      "train_wall_seconds": 428.87,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w8a8",
       "seed": 1,
-      "train_wall_seconds": 252.04,
+      "train_wall_seconds": 437.51,
       "total_steps": 30000,
       "reused": false
     },
     {
       "name": "fetch_reach_fp32_qat_scratch_w8a8",
       "seed": 2,
-      "train_wall_seconds": 592.11,
+      "train_wall_seconds": 473.73,
       "total_steps": 30000,
       "reused": false
     }
