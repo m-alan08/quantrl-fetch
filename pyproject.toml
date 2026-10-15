@@ -7,7 +7,6 @@ license = "MIT"
 authors = [{ name = "m-alan08" }]
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "torch>=2.4",
     "numpy>=1.26",
     "mujoco>=3.1,<3.12",
     "gymnasium>=1.0",
@@ -25,6 +24,10 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.6",
 ]
+cpu = ["torch==2.14.1"]
+cu126 = ["torch==2.14.1"]
+cu130 = ["torch==2.14.1"]
+rocm = ["torch==2.14.1", "triton-rocm"]
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
@@ -41,10 +44,37 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
+[tool.uv]
+default-groups = ["dev", "cpu"]
+conflicts = [
+    [{ group = "cpu" }, { group = "cu126" }, { group = "cu130" }, { group = "rocm" }],
+]
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
+explicit = true
+
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torch = [
+    { index = "pytorch-cpu", group = "cpu", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-cu126", group = "cu126", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-cu130", group = "cu130", marker = "sys_platform == 'linux'" },
+    { index = "pytorch-rocm", group = "rocm", marker = "sys_platform == 'linux'" },
+]
+triton-rocm = [{ index = "pytorch-rocm", group = "rocm", marker = "sys_platform == 'linux'" }]

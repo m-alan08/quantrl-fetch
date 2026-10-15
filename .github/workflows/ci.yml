@@ -22,3 +22,30 @@ jobs:
         run: uv run ruff format --check .
       - name: Pytest
         run: uv run pytest -q
+
+  headless-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Install EGL and OSMesa
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libegl-mesa0 libgl1 libgl1-mesa-dri libosmesa6
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Render one frame with EGL and with OSMesa, no display
+        run: QUANTRL_TEST_HEADLESS_RENDER=1 uv run pytest -q -rs tests/test_rendering.py
+
+  gpu-install-plans:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        variant: [cu126, cu130, rocm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Resolve the locked ${{ matrix.variant }} environment on Linux without installing
+        run: uv sync --locked --no-default-groups --group dev --group ${{ matrix.variant }} --dry-run
