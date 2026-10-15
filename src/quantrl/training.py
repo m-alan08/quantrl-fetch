@@ -16,11 +16,18 @@ from quantrl.algos.replay import HindsightReplayBuffer
 from quantrl.algos.sac import UPDATE_METRIC_NAMES, SACAgent
 from quantrl.checkpoint import load_checkpoint, save_checkpoint
 from quantrl.config import RunConfig, save_config, validate_config
-from quantrl.envs.factory import env_dimensions, make_env
+from quantrl.envs.factory import (
+    EnvDimensions,
+    EnvironmentContractError,
+    check_goal_env,
+    check_goal_observation,
+    env_dimensions,
+    make_env,
+)
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
 from quantrl.quant.layers import actor_linear_factory, critic_linear_factory
-from quantrl.quant.qat import check_dimensions, initialize_agent_from_checkpoint
+from quantrl.quant.qat import check_checkpoint_matches, initialize_agent_from_checkpoint
 from quantrl.utils.device import describe_device, resolve_device
 from quantrl.utils.run_info import collect_run_metadata
 from quantrl.utils.seeding import seed_everything
@@ -58,10 +65,22 @@ class UpdateScheduler:
         return count
 
 
+def check_action(action: np.ndarray, dimensions: EnvDimensions) -> None:
+    if np.shape(action) != (dimensions.action_dim,):
+        raise EnvironmentContractError(
+            f"action has shape {np.shape(action)}, expected ({dimensions.action_dim},)"
+        )
+    if not np.all(np.isfinite(action)):
+        raise EnvironmentContractError(f"action contains NaN or inf: {action}")
+    if np.any(np.abs(action) > 1.0):
+        raise EnvironmentContractError(f"action is outside [-1, 1]: {action}")
+
+
 def collect_episode(env, agent, normalizer, episode_length, use_random_actions):
-    observation_dim = env.observation_space["observation"].shape[0]
-    goal_dim = env.observation_space["desired_goal"].shape[0]
-    action_dim = env.action_space.shape[0]
+    dimensions = env_dimensions(env)
+    observation_dim = dimensions.observation_dim
+    goal_dim = dimensions.goal_dim
+    action_dim = dimensions.action_dim
     observations = np.zeros((episode_length + 1, observation_dim), np.float32)
     achieved_goals = np.zeros((episode_length + 1, goal_dim), np.float32)
     desired_goals = np.zeros((episode_length, goal_dim), np.float32)
@@ -69,6 +88,7 @@ def collect_episode(env, agent, normalizer, episode_length, use_random_actions):
     observation, _ = env.reset()
     successes = 0.0
     for step in range(episode_length):
+        check_goal_observation(observation, dimensions)
         observations[step] = observation["observation"]
         achieved_goals[step] = observation["achieved_goal"]
         desired_goals[step] = observation["desired_goal"]
@@ -77,9 +97,11 @@ def collect_episode(env, agent, normalizer, episode_length, use_random_actions):
         else:
             inputs = normalizer(observation["observation"], observation["desired_goal"])
             action = agent.act(inputs[None])[0]
+        check_action(action, dimensions)
         actions[step] = action
         observation, _, _, _, info = env.step(action)
         successes = float(info["is_success"])
+    check_goal_observation(observation, dimensions)
     observations[episode_length] = observation["observation"]
     achieved_goals[episode_length] = observation["achieved_goal"]
     return observations, achieved_goals, desired_goals, actions, successes
@@ -121,6 +143,7 @@ def train(
 
     env = make_env(config.env)
     eval_env = make_env(config.env)
+    check_goal_env(env)
     env.reset(seed=config.seed)
     env.action_space.seed(config.seed)
     dimensions = env_dimensions(env)
@@ -154,7 +177,7 @@ def train(
     calibration_inputs = 0
     if config.train.init_checkpoint:
         initial_checkpoint = load_checkpoint(config.train.init_checkpoint)
-        check_dimensions(initial_checkpoint, asdict(dimensions))
+        check_checkpoint_matches(initial_checkpoint, config, asdict(dimensions))
         calibration_inputs = initialize_agent_from_checkpoint(
             agent, normalizer, initial_checkpoint, config, eval_env
         )
