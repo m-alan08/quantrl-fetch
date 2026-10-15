@@ -1,6 +1,6 @@
 # Design
 
-This document describes what the code in this repository actually does, stage by stage, for a reader who knows reinforcement learning and quantization but does not want to read the code. Every statement about behavior was checked against the source on the `audit-hardening` branch, which starts from main at commit `d9fcb67`. Where something was measured, the command and result are given. Changes made on this branch so far: the unsigned activation grid after ReLU (concern B, fixed at your request).
+This document describes what the code in this repository actually does, stage by stage, for a reader who knows reinforcement learning and quantization but does not want to read the code. Every statement about behavior was checked against the source on the `audit-hardening` branch, which starts from main at commit `d9fcb67`. Where something was measured, the command and result are given. Changes made on this branch so far: the unsigned activation grid after ReLU (concern B) and the straight-through estimator's gradient at the outermost grid levels (concern H), both fixed at your request.
 
 Baseline at the start of the audit (run on the development Mac, Apple M5, 16 GB, macOS):
 
@@ -50,7 +50,7 @@ Status is one of **present** (exists and is backed by a test or a run), **partia
 
 | # | Requirement | Status | Evidence and notes |
 | --- | --- | --- | --- |
-| 25 | Quantizer: values on the grid, saturation, 2, 4, and 8 bits, exact identity at full precision, gradients through the STE, closeness at high bit width, per-tensor and per-channel scales | partial | Covered in `tests/test_quantization.py`, including saturation on both grids (added on this branch). The STE test only checks values away from the outermost levels; at those levels the gradient is currently 0, which contradicts the documented math (concern H). |
+| 25 | Quantizer: values on the grid, saturation, 2, 4, and 8 bits, exact identity at full precision, gradients through the STE, closeness at high bit width, per-tensor and per-channel scales | present | `tests/test_quantization.py`. Added on this branch: saturation on both grids, gradient 1 at the outermost levels on both grids, gradient 0 beyond half a step past the range, and gradient 1 for every weight at every bit width. |
 | 26 | SAC: squashing and log-probability correction, output shapes, soft target update, temperature update direction, critic and actor parameters change, finite losses | partial | Covered: log-probability against `torch.distributions`, deterministic action, finite losses, actor and target parameters change. Missing: exact Polyak formula, temperature direction, critic parameter change, explicit output shapes. |
 | 27 | Replay buffer: wrap-around, sample shapes and dtypes, no uninitialized data | partial | Wrap-around and relabeling are tested. Shapes and dtypes are not checked explicitly. Sampling from an empty buffer raises a NumPy error instead of a clear message. |
 | 28 | Environment contracts: spaces, reset and step types, goal handling, reward range | partial | `tests/test_environment.py` covers FetchReach observation keys and shapes and the vectorized reward. FetchPush, reset and step return types, and the reward range are not covered. There is no wrapper class; observation flattening happens in the normalizer. |
@@ -262,7 +262,7 @@ Rounding has zero gradient almost everywhere, so its backward pass is replaced b
 - gradient 1 inside the range [-L s, L s];
 - gradient 0 where values saturate.
 
-**What the code actually does differs at the edges (concern H).** The clamp is applied after rounding, and PyTorch's clamp gives zero gradient to a value exactly on its boundary. So every value that rounds to the outermost level (L or -L, and 0 on the unsigned grid) gets gradient 0, not just values beyond the range.
+**How the code implements it.** The gradient mask is taken from the rounded level: if `round(x / s)` lies inside [low, high] (edges included), the value gets gradient 1; otherwise it is saturated and gets gradient 0. Before this branch, the code clamped after rounding, and because PyTorch's clamp gives zero gradient exactly on its boundary, every value that rounded to the outermost level also got gradient 0 (concern H). The forward values are unchanged by the fix: re-evaluating old QAT checkpoints gives identical results.
 
 Scales are treated as constants: weight scales are computed from detached weights and activation ranges are buffers, so no gradient flows to the scale.
 
@@ -378,7 +378,7 @@ Decisions so far:
 | D. PTQ calibration choices | Kept as is. |
 | E. Unequal training budgets | Intended: PTQ, a short fine-tune, and full training from scratch are the three points being compared. |
 | F, G | Noted; no change. |
-| H. Zero STE gradient at the outermost grid levels | Open, needs a decision. |
+| H. Zero STE gradient at the outermost grid levels | Fixed on this branch. QAT results produced before the fix are stale and need rerunning. |
 
 The original descriptions follow.
 
@@ -457,7 +457,6 @@ How much it matters, measured on the trained seed-0 actors:
 - **Interaction with fix B:** on the unsigned grid, 0 is the bottom edge. Every small positive activation that rounds to 0 would get no gradient: 22 percent of them at 4 bits on FetchReach and 36 percent on FetchPush. QAT with the unsigned grid should not be run until this is decided.
 - PTQ is unaffected, since it uses no gradients.
 
-Options:
+**Decision: fixed.** The gradient mask now comes from the rounded level. Measured after the fix, on the same trained seed-0 actors: 0.00 percent of weights (per-channel) and 0.00 percent of positive post-ReLU activations (unsigned grid) get zero gradient from the quantizer, at every bit width from 8 to 2 on both tasks. Forward values did not change: two old QAT checkpoints re-evaluated after the fix gave exactly their recorded results. Every QAT result produced before the fix is stale. Rerunning the FetchReach sweep takes about 45 minutes and the FetchPush sweep about 6 hours on this Mac.
 
-1. **Fix it (recommended):** compute the gradient mask from the rounded level, so values whose rounded level lies inside the range get gradient 1 and only values beyond the range get 0. This matches the documented math and the standard STE. QAT results would then need rerunning: about 45 minutes for the FetchReach sweep and about 6 hours for the FetchPush sweep on this Mac. PTQ results only need rerunning because of fix B, which takes minutes.
-2. Keep the current behavior and document it.
+**Observation, not a concern.** While checking H, a full backward pass through the trained fp32 actors showed many weights with zero gradient even without quantization. The cause is ReLU units that never activate on the states the policy visits: 7.8 and 77.0 percent of the two hidden layers in the FetchReach actor, and 10.2, 40.2, and 25.4 percent of the three hidden layers in the FetchPush actor (seed 0, 1,000 calibration states). Saturated actions are rare: the deterministic action exceeds 0.999 in magnitude on at most 5 percent of visited states, and the tanh gradient is exactly zero in float32 on at most 0.2 percent. Inactive units are a normal property of trained ReLU networks, but they mean the actor uses fewer units than its nominal width.

@@ -6,7 +6,7 @@ How few bits does a robot arm policy actually need? This project trains reinforc
 
 ## Key results
 
-All quantized results below were produced with the symmetric grid for every layer input. Inputs that come out of a ReLU now use an unsigned grid by default; see [docs/DESIGN.md](docs/DESIGN.md) for why and for its measured effect on PTQ. In every table, "N bits" means weights and layer inputs are quantized; biases and the actor's final outputs stay in fp32.
+All quantized results below were produced with the symmetric grid for every layer input, and the QAT results also predate a fix to the straight-through estimator, which had been giving zero gradient to values at the outermost grid levels. Inputs that come out of a ReLU now use an unsigned grid by default and the gradient is fixed; see [docs/DESIGN.md](docs/DESIGN.md) for both, including their measured effects. The QAT tables need rerunning with the fixed code. In every table, "N bits" means weights and layer inputs are quantized; biases and the actor's final outputs stay in fp32.
 
 **Three ways to get a low-bit actor on FetchReach.** Every actor is evaluated on the same 100 episodes. Entries are success rate in percent (mean over 3 training seeds, lowest and highest seed in parentheses) and the mean final distance to the goal. Weights use per-channel scales; weights and activations use the same bit width.
 

@@ -81,7 +81,12 @@ def fake_quantize(
     if is_full_precision(validate_bits(bits)):
         return values
     low, high = quantization_range(bits, signed)
-    integers = torch.clamp(round_straight_through(values / scale), low, high)
+    scaled = values / scale
+    rounded = torch.round(scaled)
+    clamped = rounded.clamp(low, high)
+    inside_range = (rounded >= low) & (rounded <= high)
+    passthrough = scaled + (clamped - scaled).detach()
+    integers = torch.where(inside_range, passthrough, clamped.detach())
     return integers * scale
 
 

@@ -158,7 +158,7 @@ The forward value is `round(v)`. The `detach` removes the correction term from t
 
 `x_hat = clamp(round_ste(x / s), -L, L) * s`
 
-and its gradient with respect to `x` is 1 where `x` is inside `[-L * s, L * s]` and 0 where the clamp is active. This "clipped STE" stops pushing on values that are already saturated. The scale `s` is treated as a constant (weights' scale is computed from detached values, and activation ranges are buffers), so there is no learned step size. Tests check the gradient is exactly 1 inside the range and 0 outside, and that gradients reach `QuantLinear` weights.
+and its gradient with respect to `x` is 1 when `round(x / s)` lies inside [-L, L], edges included, and 0 when the value is saturated beyond the range. This "clipped STE" stops pushing on values that are already saturated. The code takes the gradient mask from the rounded level explicitly, because PyTorch's clamp gives zero gradient to a value exactly on its boundary; an earlier version relied on the clamp and so also blocked gradients for every value that rounded to the outermost level (see docs/DESIGN.md, concern H). The scale `s` is treated as a constant (weights' scale is computed from detached values, and activation ranges are buffers), so there is no learned step size. Tests check the gradient is exactly 1 inside the range and 0 outside, and that gradients reach `QuantLinear` weights.
 
 ### Building a quantized actor
 
@@ -238,7 +238,7 @@ At 3 and 2 bits even QAT from scratch scores slightly below the 8 percent do-not
 
 ## Known limitations
 
-- Activations are quantized symmetrically even after a ReLU, where they are never negative, so half of the integer range goes unused for hidden activations. An unsigned activation quantizer would give post-ReLU activations one extra bit of resolution. The symmetric version is kept for now because it is what the project specifies; this matters most at 2 and 3 bits, where a post-ReLU activation can only take 2 or 4 distinct values.
+- Layer inputs that come out of a ReLU use an unsigned grid (levels 0 to 2^b - 1) by default, since they are never negative. The first layer's input, the normalized observation, stays on the symmetric grid. Results produced before this change used the symmetric grid everywhere; `quant.relu_activation_grid = "signed"` restores that, and saved quantized runs without the field are read that way.
 - The scale is the maximum magnitude, not a percentile or a learned step size, so a single outlier activation in the calibration data stretches the grid for everything else.
 
 - The mujoco pin above should be revisited when gymnasium-robotics releases a fix.

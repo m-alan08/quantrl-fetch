@@ -161,12 +161,45 @@ def test_per_channel_scale_has_one_entry_per_output_row():
 
 
 def test_straight_through_estimator_passes_gradients_inside_range_and_blocks_outside():
-    values = torch.tensor([-3.0, -0.74, -0.2, 0.0, 0.31, 0.8, 3.0], requires_grad=True)
+    values = torch.tensor([-3.0, -1.2, -1.0, -0.74, -0.2, 0.0, 0.31, 0.8, 1.0, 3.0])
+    values.requires_grad_(True)
     scale = torch.tensor(1.0 / 3.0)
     output = fake_quantize(values, scale, bits=3)
     output.sum().backward()
-    expected = torch.tensor([0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0])
+    expected = torch.tensor([0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0])
     torch.testing.assert_close(values.grad, expected)
+
+
+@pytest.mark.parametrize("signed", [True, False])
+def test_values_that_round_to_the_outermost_levels_still_get_gradient(signed):
+    bits = 3
+    low, high = (-3, 3) if signed else (0, 7)
+    values = torch.tensor([low, low + 0.4, high - 0.4, high], dtype=torch.float32)
+    values.requires_grad_(True)
+    output = fake_quantize(values, torch.tensor(1.0), bits, signed=signed)
+    assert torch.round(output).tolist() == [low, low, high, high]
+    output.sum().backward()
+    assert values.grad.tolist() == [1.0, 1.0, 1.0, 1.0]
+
+
+@pytest.mark.parametrize("signed", [True, False])
+def test_values_beyond_half_a_step_past_the_range_get_no_gradient(signed):
+    low, high = (-3, 3) if signed else (0, 7)
+    values = torch.tensor([low - 0.6, low - 5.0, high + 0.6, high + 5.0], dtype=torch.float32)
+    values.requires_grad_(True)
+    output = fake_quantize(values, torch.tensor(1.0), 3, signed=signed)
+    assert output.tolist() == [low, low, high, high]
+    output.sum().backward()
+    assert values.grad.tolist() == [0.0, 0.0, 0.0, 0.0]
+
+
+def test_every_weight_inside_the_range_receives_gradient():
+    weight = random_tensor(64, 32).requires_grad_(True)
+    for bits in LOW_BIT_WIDTHS:
+        for per_channel in (False, True):
+            weight.grad = None
+            fake_quantize_weight(weight, bits, per_channel).sum().backward()
+            assert torch.all(weight.grad == 1.0)
 
 
 def test_straight_through_estimator_reaches_quant_linear_weights():
