@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from quantrl.algos.networks import GaussianActor, LinearFactory
-from quantrl.config import RunConfig, config_from_dict
+from quantrl.config import RunConfig, saved_config_from_dict
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.quant.layers import actor_linear_factory
 
@@ -50,7 +52,7 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
 def build_actor_from_checkpoint(
     checkpoint: dict[str, Any], linear_factory: LinearFactory | None = None
 ) -> GaussianActor:
-    config = config_from_dict(checkpoint["config"])
+    config = saved_config_from_dict(checkpoint["config"])
     dimensions = checkpoint["dimensions"]
     if linear_factory is None:
         linear_factory = actor_linear_factory(config.quant)
@@ -69,7 +71,7 @@ def build_actor_from_checkpoint(
 
 def load_policy(path: str | Path) -> LoadedPolicy:
     checkpoint = load_checkpoint(path)
-    config = config_from_dict(checkpoint["config"])
+    config = saved_config_from_dict(checkpoint["config"])
     dimensions = checkpoint["dimensions"]
     normalizer = GoalObservationNormalizer(
         dimensions["observation_dim"],
@@ -88,11 +90,11 @@ def load_policy(path: str | Path) -> LoadedPolicy:
     )
 
 
-def deterministic_policy_function(actor: torch.nn.Module):
+def deterministic_policy_function(actor: GaussianActor) -> Callable[[np.ndarray], np.ndarray]:
     reference_parameter = next(actor.parameters())
 
     @torch.no_grad()
-    def policy(inputs):
+    def policy(inputs: np.ndarray) -> np.ndarray:
         tensor_inputs = torch.as_tensor(
             inputs, dtype=reference_parameter.dtype, device=reference_parameter.device
         )

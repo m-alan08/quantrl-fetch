@@ -16,11 +16,18 @@ from quantrl.quant.quantizer import (
     validate_bits,
 )
 
+RELU_ACTIVATION_GRIDS = ("signed", "unsigned")
+
 
 class ActivationQuantizer(nn.Module):
-    def __init__(self, bits: int, ema_momentum: float = 0.99):
+    running_max_abs: torch.Tensor
+    initialized: torch.Tensor
+    frozen: torch.Tensor
+
+    def __init__(self, bits: int, ema_momentum: float = 0.99, signed: bool = True):
         super().__init__()
         self.bits = validate_bits(bits)
+        self.signed = bool(signed)
         if not (isinstance(ema_momentum, (int, float)) and 0.0 <= ema_momentum <= 1.0):
             raise ValueError(f"ema_momentum must be a number in [0, 1], got {ema_momentum!r}")
         self.ema_momentum = float(ema_momentum)
@@ -35,7 +42,7 @@ class ActivationQuantizer(nn.Module):
 
     @property
     def scale(self) -> torch.Tensor:
-        return scale_from_max_abs(self.running_max_abs, self.bits)
+        return scale_from_max_abs(self.running_max_abs, self.bits, self.signed)
 
     def freeze(self) -> None:
         self.frozen.fill_(True)
@@ -81,10 +88,12 @@ class ActivationQuantizer(nn.Module):
             self._observe(values)
         if not self.initialized:
             return values
-        return fake_quantize(values, self.scale, self.bits)
+        return fake_quantize(values, self.scale, self.bits, self.signed)
 
 
 class QuantLinear(nn.Linear):
+    input_quantizer: ActivationQuantizer
+
     def __init__(
         self,
         in_features: int,
@@ -94,11 +103,14 @@ class QuantLinear(nn.Linear):
         per_channel_weights: bool = False,
         activation_ema_momentum: float = 0.99,
         bias: bool = True,
+        unsigned_input: bool = False,
     ):
         super().__init__(in_features, out_features, bias=bias)
         self.weight_bits = validate_bits(weight_bits)
         self.per_channel_weights = per_channel_weights
-        self.input_quantizer = ActivationQuantizer(activation_bits, activation_ema_momentum)
+        self.input_quantizer = ActivationQuantizer(
+            activation_bits, activation_ema_momentum, signed=not unsigned_input
+        )
 
     def quantized_weight(self) -> torch.Tensor:
         return fake_quantize_weight(self.weight, self.weight_bits, self.per_channel_weights)
@@ -110,12 +122,16 @@ class QuantLinear(nn.Linear):
         return (
             f"{super().extra_repr()}, weight_bits={self.weight_bits}, "
             f"activation_bits={self.input_quantizer.bits}, "
-            f"per_channel_weights={self.per_channel_weights}"
+            f"per_channel_weights={self.per_channel_weights}, "
+            f"signed_input={self.input_quantizer.signed}"
         )
 
 
 def quant_linear_factory(quant_config: QuantConfig) -> LinearFactory:
-    def factory(in_features: int, out_features: int) -> nn.Module:
+    validate_relu_activation_grid(quant_config.relu_activation_grid)
+    unsigned_after_relu = quant_config.relu_activation_grid == "unsigned"
+
+    def factory(in_features: int, out_features: int, nonnegative_input: bool = False) -> nn.Module:
         return QuantLinear(
             in_features,
             out_features,
@@ -123,9 +139,18 @@ def quant_linear_factory(quant_config: QuantConfig) -> LinearFactory:
             activation_bits=quant_config.activation_bits,
             per_channel_weights=quant_config.per_channel_weights,
             activation_ema_momentum=quant_config.activation_ema_momentum,
+            unsigned_input=nonnegative_input and unsigned_after_relu,
         )
 
     return factory
+
+
+def validate_relu_activation_grid(grid: str) -> str:
+    if grid not in RELU_ACTIVATION_GRIDS:
+        raise ValueError(
+            f"quant.relu_activation_grid must be one of {RELU_ACTIVATION_GRIDS}, got {grid!r}"
+        )
+    return grid
 
 
 def uses_quantization(quant_config: QuantConfig) -> bool:
@@ -158,6 +183,10 @@ def build_quantized_actor(
         sac_config.log_std_max,
         quant_linear_factory(quant_config),
     )
+
+
+def quant_layers(module: nn.Module) -> list[QuantLinear]:
+    return [child for child in module.modules() if isinstance(child, QuantLinear)]
 
 
 def activation_quantizers(module: nn.Module) -> Iterator[ActivationQuantizer]:

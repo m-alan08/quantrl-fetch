@@ -6,7 +6,7 @@ import time
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -15,14 +15,33 @@ from quantrl.algos.networks import LinearFactory
 from quantrl.algos.replay import HindsightReplayBuffer
 from quantrl.algos.sac import UPDATE_METRIC_NAMES, SACAgent
 from quantrl.checkpoint import load_checkpoint, save_checkpoint
-from quantrl.config import RunConfig, save_config
-from quantrl.envs.factory import env_dimensions, make_env
+from quantrl.config import RunConfig, save_config, validate_config
+from quantrl.envs.factory import (
+    EnvDimensions,
+    EnvironmentContractError,
+    check_goal_env,
+    check_goal_observation,
+    env_dimensions,
+    make_env,
+)
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
 from quantrl.quant.layers import actor_linear_factory, critic_linear_factory
-from quantrl.quant.qat import check_dimensions, initialize_agent_from_checkpoint
+from quantrl.quant.qat import check_checkpoint_matches, initialize_agent_from_checkpoint
+from quantrl.resume import (
+    capture_buffer,
+    capture_rng_state,
+    check_resume_compatible,
+    load_resume_state,
+    restore_buffer,
+    restore_rng_state,
+    resume_path,
+    save_resume_state,
+)
+from quantrl.utils.device import describe_device, resolve_device
 from quantrl.utils.run_info import collect_run_metadata
-from quantrl.utils.seeding import resolve_device, seed_everything
+from quantrl.utils.seeding import seed_everything
+from quantrl.utils.wandb_logging import WandbLogger
 
 
 class ProgressLog:
@@ -30,6 +49,18 @@ class ProgressLog:
         self.path = path
         self.fieldnames: list[str] | None = None
         self.rows: list[dict[str, Any]] = []
+
+    def restore(self, last_step: int) -> None:
+        if not self.path.exists():
+            return
+        with self.path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            self.fieldnames = list(reader.fieldnames or [])
+            self.rows = [row for row in reader if int(row["step"]) <= last_step]
+        with self.path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=self.fieldnames, restval="")
+            writer.writeheader()
+            writer.writerows(self.rows)
 
     def write(self, row: dict[str, Any]) -> None:
         self.rows.append(row)
@@ -57,10 +88,22 @@ class UpdateScheduler:
         return count
 
 
+def check_action(action: np.ndarray, dimensions: EnvDimensions) -> None:
+    if np.shape(action) != (dimensions.action_dim,):
+        raise EnvironmentContractError(
+            f"action has shape {np.shape(action)}, expected ({dimensions.action_dim},)"
+        )
+    if not np.all(np.isfinite(action)):
+        raise EnvironmentContractError(f"action contains NaN or inf: {action}")
+    if np.any(np.abs(action) > 1.0):
+        raise EnvironmentContractError(f"action is outside [-1, 1]: {action}")
+
+
 def collect_episode(env, agent, normalizer, episode_length, use_random_actions):
-    observation_dim = env.observation_space["observation"].shape[0]
-    goal_dim = env.observation_space["desired_goal"].shape[0]
-    action_dim = env.action_space.shape[0]
+    dimensions = env_dimensions(env)
+    observation_dim = dimensions.observation_dim
+    goal_dim = dimensions.goal_dim
+    action_dim = dimensions.action_dim
     observations = np.zeros((episode_length + 1, observation_dim), np.float32)
     achieved_goals = np.zeros((episode_length + 1, goal_dim), np.float32)
     desired_goals = np.zeros((episode_length, goal_dim), np.float32)
@@ -68,6 +111,7 @@ def collect_episode(env, agent, normalizer, episode_length, use_random_actions):
     observation, _ = env.reset()
     successes = 0.0
     for step in range(episode_length):
+        check_goal_observation(observation, dimensions)
         observations[step] = observation["observation"]
         achieved_goals[step] = observation["achieved_goal"]
         desired_goals[step] = observation["desired_goal"]
@@ -76,9 +120,11 @@ def collect_episode(env, agent, normalizer, episode_length, use_random_actions):
         else:
             inputs = normalizer(observation["observation"], observation["desired_goal"])
             action = agent.act(inputs[None])[0]
+        check_action(action, dimensions)
         actions[step] = action
         observation, _, _, _, info = env.step(action)
         successes = float(info["is_success"])
+    check_goal_observation(observation, dimensions)
     observations[episode_length] = observation["observation"]
     achieved_goals[episode_length] = observation["achieved_goal"]
     return observations, achieved_goals, desired_goals, actions, successes
@@ -99,20 +145,28 @@ def train(
     actor_factory: LinearFactory | None = None,
     verbose: bool = True,
 ) -> dict[str, Any]:
+    validate_config(config)
+    if config.train.init_checkpoint and not Path(config.train.init_checkpoint).is_file():
+        raise FileNotFoundError(
+            f"train.init_checkpoint points to {config.train.init_checkpoint!r}, which is not a file"
+        )
     run_dir = config.run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
-    rng = seed_everything(config.seed)
+    rng = seed_everything(config.seed, config.deterministic)
     torch.set_num_threads(config.torch_threads)
     device = resolve_device(config.device)
 
     metadata = collect_run_metadata(config.seed)
-    metadata["device"] = str(device)
+    metadata.update(describe_device(device))
+    metadata["requested_device"] = config.device
+    metadata["deterministic"] = config.deterministic
     metadata["torch_threads"] = config.torch_threads
     save_config(config, run_dir / "config.json")
     (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
     env = make_env(config.env)
     eval_env = make_env(config.env)
+    check_goal_env(env)
     env.reset(seed=config.seed)
     env.action_space.seed(config.seed)
     dimensions = env_dimensions(env)
@@ -131,7 +185,7 @@ def train(
         observation_dim=dimensions.observation_dim,
         goal_dim=dimensions.goal_dim,
         action_dim=dimensions.action_dim,
-        reward_function=env.unwrapped.compute_reward,
+        reward_function=cast(Any, env.unwrapped).compute_reward,
         replay_k=config.her.replay_k,
         rng=rng,
     )
@@ -143,16 +197,20 @@ def train(
         actor_linear_factory=actor_factory or actor_linear_factory(config.quant),
         critic_linear_factory=critic_linear_factory(config.quant),
     )
+    saved_state = None
+    state_file = resume_path(run_dir)
+    if config.train.resume and state_file.exists():
+        saved_state = load_resume_state(state_file)
+        check_resume_compatible(saved_state["config"], config)
     calibration_inputs = 0
-    if config.train.init_checkpoint:
+    if config.train.init_checkpoint and saved_state is None:
         initial_checkpoint = load_checkpoint(config.train.init_checkpoint)
-        check_dimensions(initial_checkpoint, asdict(dimensions))
+        check_checkpoint_matches(initial_checkpoint, config, asdict(dimensions))
         calibration_inputs = initialize_agent_from_checkpoint(
             agent, normalizer, initial_checkpoint, config, eval_env
         )
     metadata["init_checkpoint"] = config.train.init_checkpoint
     metadata["calibration_inputs"] = calibration_inputs
-    (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
     def policy(inputs: np.ndarray) -> np.ndarray:
         return agent.act(inputs, deterministic=True)
@@ -166,8 +224,34 @@ def train(
     next_checkpoint_step = config.train.checkpoint_interval or None
     recent_metrics: dict[str, list[float]] = defaultdict(list)
     recent_train_success: list[float] = []
-    start_time = time.perf_counter()
+    previous_train_seconds = 0.0
     eval_seconds = 0.0
+    if saved_state is not None:
+        agent.load_state_dict(saved_state["agent"])
+        agent.update_count = saved_state["update_count"]
+        normalizer.load_state_dict(saved_state["normalizer"])
+        restore_buffer(buffer, saved_state["buffer"])
+        counters = saved_state["counters"]
+        total_steps = counters["total_steps"]
+        episodes = counters["episodes"]
+        next_eval_step = counters["next_eval_step"]
+        next_checkpoint_step = counters["next_checkpoint_step"]
+        update_scheduler.carry = counters["update_carry"]
+        previous_train_seconds = counters["train_seconds"]
+        eval_seconds = counters["eval_seconds"]
+        recent_metrics = defaultdict(list, saved_state["recent_metrics"])
+        recent_train_success = list(saved_state["recent_train_success"])
+        progress.restore(total_steps)
+        restore_rng_state(saved_state["rng"], env, device)
+        metadata["resumed_from_step"] = total_steps
+        metadata["resume_count"] = saved_state["metadata"].get("resume_count", 0) + 1
+        if verbose:
+            print(f"[{config.name} seed {config.seed}] resuming at step {total_steps}", flush=True)
+    elif config.train.resume and verbose:
+        print(f"[{config.name} seed {config.seed}] no saved state to resume, starting fresh")
+    (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    wandb_logger = WandbLogger(config, run_dir)
+    start_time = time.perf_counter()
 
     def checkpoint(path: Path) -> None:
         save_checkpoint(
@@ -178,6 +262,32 @@ def train(
             asdict(dimensions),
             metadata,
             total_steps,
+        )
+
+    def write_resume_state() -> None:
+        save_resume_state(
+            state_file,
+            {
+                "config": config.to_dict(),
+                "metadata": metadata,
+                "dimensions": asdict(dimensions),
+                "agent": agent.state_dict(),
+                "update_count": agent.update_count,
+                "normalizer": normalizer.state_dict(),
+                "buffer": capture_buffer(buffer),
+                "counters": {
+                    "total_steps": total_steps,
+                    "episodes": episodes,
+                    "next_eval_step": next_eval_step,
+                    "next_checkpoint_step": next_checkpoint_step,
+                    "update_carry": update_scheduler.carry,
+                    "train_seconds": previous_train_seconds + time.perf_counter() - start_time,
+                    "eval_seconds": eval_seconds,
+                },
+                "recent_metrics": dict(recent_metrics),
+                "recent_train_success": list(recent_train_success),
+                "rng": capture_rng_state(env, device),
+            },
         )
 
     def evaluate_and_log() -> None:
@@ -195,7 +305,7 @@ def train(
         row = {
             "step": total_steps,
             "episodes": episodes,
-            "wall_seconds": round(time.perf_counter() - start_time, 2),
+            "wall_seconds": round(previous_train_seconds + time.perf_counter() - start_time, 2),
             "train_success": float(np.mean(recent_train_success))
             if recent_train_success
             else float("nan"),
@@ -206,6 +316,7 @@ def train(
             },
         }
         progress.write(row)
+        wandb_logger.log(row)
         if verbose:
             print(
                 f"[{config.name} seed {config.seed}] step {total_steps:>7d} "
@@ -218,7 +329,7 @@ def train(
         recent_metrics.clear()
         recent_train_success.clear()
 
-    if config.train.eval_at_start:
+    if config.train.eval_at_start and saved_state is None:
         evaluate_and_log()
 
     while total_steps < config.train.total_steps:
@@ -238,7 +349,8 @@ def train(
                 for key, value in agent.update(batch).items():
                     recent_metrics[key].append(value)
 
-        if next_checkpoint_step is not None and total_steps >= next_checkpoint_step:
+        save_due = next_checkpoint_step is not None and total_steps >= next_checkpoint_step
+        if save_due and next_checkpoint_step is not None:
             checkpoint(run_dir / f"checkpoint_{total_steps}.pt")
             next_checkpoint_step += config.train.checkpoint_interval
 
@@ -246,8 +358,12 @@ def train(
             evaluate_and_log()
             next_eval_step += config.train.eval_interval
 
-    train_seconds = time.perf_counter() - start_time
+        if save_due:
+            write_resume_state()
+
+    train_seconds = previous_train_seconds + time.perf_counter() - start_time
     checkpoint(run_dir / "checkpoint.pt")
+    write_resume_state()
 
     final_seeds = evaluation_seeds(config.eval.seed_offset, config.eval.episodes)
     final_result, _ = evaluate_policy(
@@ -269,6 +385,7 @@ def train(
         "final_eval": final_result.to_dict(),
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    wandb_logger.finish(summary)
     env.close()
     eval_env.close()
     return summary

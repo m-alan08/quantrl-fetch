@@ -8,6 +8,7 @@ from quantrl.training import train
 from quantrl.viz.plots import plot_success_vs_bits
 
 SMOKE_OVERRIDES = [
+    "device=cpu",
     "sac.hidden_sizes=[32, 32]",
     "sac.batch_size=32",
     "train.total_steps=200",

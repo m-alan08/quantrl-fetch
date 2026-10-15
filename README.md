@@ -6,6 +6,8 @@ How few bits does a robot arm policy actually need? This project trains reinforc
 
 ## Key results
 
+All quantized results below were produced with the symmetric grid for every layer input, and the QAT results also predate a fix to the straight-through estimator, which had been giving zero gradient to values at the outermost grid levels. Inputs that come out of a ReLU now use an unsigned grid by default and the gradient is fixed; see [docs/DESIGN.md](docs/DESIGN.md) for both, including their measured effects. The QAT tables need rerunning with the fixed code. In every table, "N bits" means weights and layer inputs are quantized; biases and the actor's final outputs stay in fp32.
+
 **Three ways to get a low-bit actor on FetchReach.** Every actor is evaluated on the same 100 episodes. Entries are success rate in percent (mean over 3 training seeds, lowest and highest seed in parentheses) and the mean final distance to the goal. Weights use per-channel scales; weights and activations use the same bit width.
 
 | Bits | PTQ | QAT fine-tune | QAT from scratch |
@@ -151,23 +153,35 @@ Everything (SAC, HER, the quantizer) is implemented from scratch in PyTorch.
 
 ## Quickstart
 
-Requires [uv](https://docs.astral.sh/uv/). uv installs the pinned Python 3.12 automatically.
+Requires [uv](https://docs.astral.sh/uv/). uv installs the pinned Python 3.12 automatically. `scripts/install.sh` installs the locked dependencies with the right torch build for the machine (CPU on macOS, with MPS available; CUDA or ROCm on a Linux GPU node) and prints the devices torch can see.
 
 ```bash
 git clone https://github.com/m-alan08/quantrl-fetch.git
 cd quantrl-fetch
-uv sync
+scripts/install.sh
 uv run pytest -q
+```
+
+Check the whole pipeline end to end in under a minute (tiny training run, checkpoint reload, resume, PTQ and QAT at 8 and 4 bits, plots, and a video). It prints a PASS or FAIL table and exits nonzero on failure:
+
+```bash
+uv run python scripts/smoke_test.py --device cpu --render
 ```
 
 Train SAC with HER on FetchReach for one seed (about 1.5 minutes on an Apple M5 CPU), then render four evaluation episodes of the trained policy:
 
 ```bash
-uv run python scripts/train.py --config configs/fetch_reach.json --seed 0
+uv run python scripts/train.py --config configs/fetch_reach.json --seed 0 --device cpu
 uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/checkpoint.pt --out videos/fetch_reach_fp32.mp4 --gif videos/fetch_reach_fp32.gif
 ```
 
-Training writes `runs/fetch_reach_fp32_seed0/` with the resolved config, run metadata (git commit, package versions, seed), a progress CSV, a summary JSON, and the checkpoint. Any config field can be overridden from the command line, for example `--set train.total_steps=5000 sac.batch_size=512`.
+Training writes `runs/fetch_reach_fp32_seed0/` with the resolved config, run metadata (git commit, package versions, seed, device), a progress CSV, a summary JSON, the policy checkpoint, and `resume_state.pt` with the full training state. Any config field can be overridden from the command line, for example `--set train.total_steps=5000 sac.batch_size=512`; invalid values stop the run immediately with a list of every problem.
+
+- `--device auto` (the default) picks CUDA, then MPS, then CPU. All published results used `--device cpu`, which is also faster than MPS for these small networks on the Mac.
+- `--resume` continues an interrupted run from `resume_state.pt`. The resumed run matches an uninterrupted one exactly; only `train.total_steps` may change.
+- `make_video.py --render-backend` chooses MuJoCo's OpenGL backend: `auto` uses EGL on a Linux machine without a display and the default elsewhere; `egl` and `osmesa` force a headless backend.
+
+To run on a Slurm GPU cluster, follow [docs/CLUSTER_RUNBOOK.md](docs/CLUSTER_RUNBOOK.md). [docs/DESIGN.md](docs/DESIGN.md) describes every stage of the pipeline and the requirements checklist.
 
 If `uv run` reports `No module named 'quantrl'` on macOS, the `.venv` files have picked up the macOS hidden flag, which makes Python skip the editable install. Run `chflags -R nohidden .venv` to fix it. If the repository lives in an iCloud Drive synced folder such as `~/Documents`, the flag can come back; keeping the environment in a folder iCloud skips stops that: `mv .venv .venv.nosync && ln -s .venv.nosync .venv` ([docs/NOTES.md](docs/NOTES.md) has the details).
 
@@ -180,10 +194,13 @@ src/quantrl/
   envs/      environment creation and observation normalization
   eval/      deterministic evaluation and bootstrap statistics
   viz/       video rendering and plotting
-  utils/     seeding and run metadata
-  config.py  dataclass configs
+  utils/     device selection, seeding, run metadata, optional W&B logging
+  config.py  dataclass configs and validation
+  resume.py  full training state for exact resume
+  rendering.py  headless OpenGL backend selection
 configs/     JSON run configs
-scripts/     train, evaluate, sweep, make_video, make_plots
+scripts/     train, evaluate, sweep, make_video, make_plots, smoke_test, install, cluster_smoke
+cluster/     Slurm submission for the cluster smoke test
 tests/       pytest suite
 results/     small metric files (CSV, JSON)
 assets/      README clips and charts
@@ -197,7 +214,7 @@ All runs use CPU with one torch thread, which is bitwise reproducible: rerunning
 **Phase 1, FetchReach fp32** (config [configs/fetch_reach.json](configs/fetch_reach.json), seeds 0, 1, 2, 30,000 environment steps each):
 
 ```bash
-uv run python scripts/train.py --config configs/fetch_reach.json --seed 0 1 2
+uv run python scripts/train.py --config configs/fetch_reach.json --seed 0 1 2 --device cpu
 uv run python scripts/evaluate.py --checkpoints runs/fetch_reach_fp32_seed{0,1,2}/checkpoint.pt --out results/phase1_fetch_reach_fp32_eval.csv --summary results/phase1_fetch_reach_fp32_summary.json
 uv run python scripts/make_plots.py --runs runs/fetch_reach_fp32_seed{0,1,2} --out assets/fetch_reach_fp32_training.png --title "SAC + HER on FetchReach-v4 (fp32, 3 seeds)" --csv results/phase1_fetch_reach_fp32_progress.csv
 uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/checkpoint.pt --episodes 4 --out assets/fetch_reach_fp32.mp4 --gif assets/fetch_reach_fp32.gif
@@ -206,9 +223,9 @@ uv run python scripts/make_video.py --checkpoint runs/fetch_reach_fp32_seed0/che
 **Phase 2, FetchPush fp32** (config [configs/fetch_push.json](configs/fetch_push.json): three hidden layers of 256 units, batch 512, half a gradient update per environment step, 10,000 random steps first, 1,000,000 steps in total; seeds 0, 1, 2):
 
 ```bash
-uv run python scripts/train.py --config configs/fetch_push.json --seed 0
-uv run python scripts/train.py --config configs/fetch_push.json --seed 1
-uv run python scripts/train.py --config configs/fetch_push.json --seed 2
+uv run python scripts/train.py --config configs/fetch_push.json --seed 0 --device cpu
+uv run python scripts/train.py --config configs/fetch_push.json --seed 1 --device cpu
+uv run python scripts/train.py --config configs/fetch_push.json --seed 2 --device cpu
 uv run python scripts/evaluate.py --checkpoints runs/fetch_push_fp32_seed{0,1,2}/checkpoint.pt --out results/phase2_fetch_push_fp32_eval.csv --summary results/phase2_fetch_push_fp32_summary.json
 uv run python scripts/make_plots.py --runs runs/fetch_push_fp32_seed{0,1,2} --out assets/fetch_push_fp32_training.png --title "SAC + HER on FetchPush-v4 (fp32, 3 seeds)" --csv results/phase2_fetch_push_fp32_progress.csv
 uv run python scripts/make_video.py --checkpoint runs/fetch_push_fp32_seed1/checkpoint.pt --episodes 4 --size 360 --out assets/fetch_push_fp32.mp4 --gif assets/fetch_push_fp32.gif
@@ -231,7 +248,7 @@ Measured runtime for Phase 1: one seed alone took 90 seconds of training (96 sec
 **Phase 4, method sweep on FetchReach** (uses the Phase 1 checkpoints; trains 18 QAT fine-tuning and 18 QAT-from-scratch runs, then evaluates every actor on the same 100 episodes):
 
 ```bash
-uv run python scripts/sweep.py --base-config configs/fetch_reach.json --fp32-runs runs/fetch_reach_fp32_seed0 runs/fetch_reach_fp32_seed1 runs/fetch_reach_fp32_seed2 --finetune-set train.total_steps=10000 train.random_steps=0 train.update_after=1000 train.eval_interval=1000 sac.actor_lr=0.0001 sac.alpha_lr=0 --workers 4 --out results/phase4_fetch_reach_sweep.csv --summary results/phase4_fetch_reach_sweep_summary.csv --timings results/phase4_fetch_reach_sweep_timings.json
+uv run python scripts/sweep.py --base-config configs/fetch_reach.json --fp32-runs runs/fetch_reach_fp32_seed0 runs/fetch_reach_fp32_seed1 runs/fetch_reach_fp32_seed2 --finetune-set train.total_steps=10000 train.random_steps=0 train.update_after=1000 train.eval_interval=1000 sac.actor_lr=0.0001 sac.alpha_lr=0 --workers 4 --device cpu --out results/phase4_fetch_reach_sweep.csv --summary results/phase4_fetch_reach_sweep_summary.csv --timings results/phase4_fetch_reach_sweep_timings.json
 uv run python scripts/make_plots.py --sweep-csv results/phase4_fetch_reach_sweep.csv --out assets/fetch_reach_methods_bits.png --title "Low-bit actors on FetchReach: PTQ vs QAT (per-channel weights)"
 ```
 
@@ -254,7 +271,7 @@ Measured runtime: the sweep took 2,728 seconds of compute time with 4 worker pro
 **Phase 4, method sweep on FetchPush** (uses the Phase 2 checkpoints):
 
 ```bash
-uv run python scripts/sweep.py --base-config configs/fetch_push.json --fp32-runs runs/fetch_push_fp32_seed0 runs/fetch_push_fp32_seed1 runs/fetch_push_fp32_seed2 --finetune-set train.total_steps=100000 train.random_steps=0 train.update_after=10000 train.eval_interval=10000 sac.actor_lr=0.0001 sac.alpha_lr=0 --workers 9 --out results/phase4_fetch_push_sweep.csv --summary results/phase4_fetch_push_sweep_summary.csv --timings results/phase4_fetch_push_sweep_timings.json
+uv run python scripts/sweep.py --base-config configs/fetch_push.json --fp32-runs runs/fetch_push_fp32_seed0 runs/fetch_push_fp32_seed1 runs/fetch_push_fp32_seed2 --finetune-set train.total_steps=100000 train.random_steps=0 train.update_after=10000 train.eval_interval=10000 sac.actor_lr=0.0001 sac.alpha_lr=0 --workers 9 --device cpu --out results/phase4_fetch_push_sweep.csv --summary results/phase4_fetch_push_sweep_summary.csv --timings results/phase4_fetch_push_sweep_timings.json
 uv run python scripts/make_plots.py --sweep-csv results/phase4_fetch_push_sweep.csv --out assets/fetch_push_methods_bits.png --title "Low-bit actors on FetchPush: PTQ vs QAT (per-channel weights)"
 uv run python scripts/make_video.py --checkpoint runs/fetch_push_fp32_seed0/checkpoint.pt --ptq-bits 5 --compare-checkpoint runs/fetch_push_fp32_qat_scratch_w5a5_seed0/checkpoint.pt --seeds 1000006 1000008 1000015 1000000 --size 360 --out assets/fetch_push_ptq5_vs_qat_scratch5.mp4 --gif assets/fetch_push_ptq5_vs_qat_scratch5.gif --gif-width 560
 ```

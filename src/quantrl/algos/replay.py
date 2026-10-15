@@ -46,6 +46,23 @@ class HindsightReplayBuffer:
         desired_goals: np.ndarray,
         actions: np.ndarray,
     ) -> None:
+        expected = {
+            "observations": (self.episode_length + 1, self.observations.shape[2]),
+            "achieved_goals": (self.episode_length + 1, self.achieved_goals.shape[2]),
+            "desired_goals": (self.episode_length, self.desired_goals.shape[2]),
+            "actions": (self.episode_length, self.actions.shape[2]),
+        }
+        given = {
+            "observations": observations,
+            "achieved_goals": achieved_goals,
+            "desired_goals": desired_goals,
+            "actions": actions,
+        }
+        for name, shape in expected.items():
+            if np.shape(given[name]) != shape:
+                raise ValueError(f"{name} has shape {np.shape(given[name])}, expected {shape}")
+            if not np.all(np.isfinite(given[name])):
+                raise ValueError(f"{name} contains NaN or inf")
         index = self.next_index
         self.observations[index] = observations
         self.achieved_goals[index] = achieved_goals
@@ -55,6 +72,10 @@ class HindsightReplayBuffer:
         self.size = min(self.size + 1, self.capacity)
 
     def sample_indices(self, batch_size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if self.size == 0:
+            raise RuntimeError("Cannot sample from an empty replay buffer; store an episode first")
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {batch_size}")
         episode_indices = self.rng.integers(0, self.size, size=batch_size)
         time_indices = self.rng.integers(0, self.episode_length, size=batch_size)
         relabel_mask = self.rng.random(batch_size) < self.future_probability

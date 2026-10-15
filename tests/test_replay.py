@@ -81,3 +81,43 @@ def test_buffer_overwrites_oldest_episode_when_full():
         store_labeled_episode(buffer, episode_id)
     assert len(buffer) == 2
     assert set(np.unique(buffer.observations[:, 0, 0])) == {1.0, 2.0}
+
+
+def test_sample_shapes_and_dtypes():
+    buffer = make_buffer(replay_k=4)
+    for episode_id in range(3):
+        store_labeled_episode(buffer, episode_id)
+    batch = buffer.sample(32)
+    expected = {
+        "observations": ((32, 2), np.float32),
+        "next_observations": ((32, 2), np.float32),
+        "goals": ((32, GOAL_DIM), np.float32),
+        "actions": ((32, 1), np.float32),
+        "rewards": ((32,), np.float32),
+        "relabeled": ((32,), np.bool_),
+    }
+    assert set(batch) == set(expected)
+    for key, (shape, dtype) in expected.items():
+        assert batch[key].shape == shape, key
+        assert batch[key].dtype == dtype, key
+
+
+def test_samples_never_come_from_unwritten_slots():
+    buffer = make_buffer(replay_k=4, capacity=10)
+    for episode_id in (7, 8):
+        store_labeled_episode(buffer, episode_id)
+    batch = buffer.sample(5000)
+    assert set(np.unique(batch["observations"][:, 0])) <= {7.0, 8.0}
+    assert set(np.unique(batch["next_observations"][:, 0])) <= {7.0, 8.0}
+    assert np.all(batch["goals"][~batch["relabeled"]] == -1.0)
+    assert set(np.unique(batch["goals"][batch["relabeled"], 0])) <= {7.0, 8.0}
+
+
+def test_wrap_around_keeps_the_most_recent_episodes_in_order():
+    buffer = make_buffer(capacity=3)
+    for episode_id in range(7):
+        store_labeled_episode(buffer, episode_id)
+    assert len(buffer) == 3
+    assert buffer.next_index == 7 % 3
+    assert sorted(np.unique(buffer.observations[:, 0, 0])) == [4.0, 5.0, 6.0]
+    assert buffer.observations[0, 0, 0] == 6.0

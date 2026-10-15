@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-LinearFactory = Callable[[int, int], nn.Module]
+
+class LinearFactory(Protocol):
+    def __call__(
+        self, in_features: int, out_features: int, nonnegative_input: bool = ...
+    ) -> nn.Module: ...
 
 
-def plain_linear(in_features: int, out_features: int) -> nn.Module:
+def plain_linear(in_features: int, out_features: int, nonnegative_input: bool = False) -> nn.Module:
     return nn.Linear(in_features, out_features)
 
 
@@ -22,11 +27,11 @@ def build_mlp(
 ) -> nn.Sequential:
     layers: list[nn.Module] = []
     previous_dim = input_dim
-    for hidden_dim in hidden_sizes:
-        layers.append(linear_factory(previous_dim, hidden_dim))
+    for index, hidden_dim in enumerate(hidden_sizes):
+        layers.append(linear_factory(previous_dim, hidden_dim, nonnegative_input=index > 0))
         layers.append(nn.ReLU())
         previous_dim = hidden_dim
-    layers.append(linear_factory(previous_dim, output_dim))
+    layers.append(linear_factory(previous_dim, output_dim, nonnegative_input=len(hidden_sizes) > 0))
     return nn.Sequential(*layers)
 
 

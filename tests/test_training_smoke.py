@@ -7,6 +7,7 @@ from quantrl.config import load_config
 from quantrl.training import ProgressLog, UpdateScheduler, train
 
 SMOKE_OVERRIDES = [
+    "device=cpu",
     "sac.hidden_sizes=[32, 32]",
     "sac.batch_size=32",
     "train.total_steps=400",

@@ -7,7 +7,7 @@ import torch
 
 from quantrl.algos.sac import SACAgent
 from quantrl.checkpoint import build_actor_from_checkpoint, deterministic_policy_function
-from quantrl.config import RunConfig
+from quantrl.config import RunConfig, saved_config_from_dict
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluation_seeds
 from quantrl.quant.layers import activation_quantizers
@@ -18,11 +18,40 @@ from quantrl.quant.ptq import (
 )
 
 
+class CheckpointMismatchError(ValueError):
+    pass
+
+
 def check_dimensions(checkpoint: dict[str, Any], dimensions: dict[str, int]) -> None:
     if checkpoint["dimensions"] != dimensions:
-        raise ValueError(
+        raise CheckpointMismatchError(
             f"Checkpoint dimensions {checkpoint['dimensions']} do not match the "
             f"environment {dimensions}"
+        )
+
+
+def check_checkpoint_matches(
+    checkpoint: dict[str, Any], config: RunConfig, dimensions: dict[str, int]
+) -> None:
+    saved = saved_config_from_dict(checkpoint["config"])
+    problems = []
+    if saved.env.env_id != config.env.env_id:
+        problems.append(
+            f"env.env_id is {saved.env.env_id!r} in the checkpoint, {config.env.env_id!r} now"
+        )
+    if saved.sac.hidden_sizes != config.sac.hidden_sizes:
+        problems.append(
+            f"sac.hidden_sizes is {saved.sac.hidden_sizes} in the checkpoint, "
+            f"{config.sac.hidden_sizes} now"
+        )
+    if checkpoint["dimensions"] != dimensions:
+        problems.append(
+            f"dimensions are {checkpoint['dimensions']} in the checkpoint, {dimensions} now"
+        )
+    if problems:
+        raise CheckpointMismatchError(
+            "Checkpoint does not match the config:\n"
+            + "\n".join(f"  - {problem}" for problem in problems)
         )
 
 

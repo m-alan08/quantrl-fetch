@@ -10,7 +10,7 @@ import pandas as pd
 from quantrl.eval.stats import aggregate_across_seeds
 from quantrl.sweep import METHODS, SweepPlan, run_sweep
 
-GROUP_COLUMNS = ["env_id", "method", "bits", "weight_granularity"]
+GROUP_COLUMNS = ["env_id", "method", "bits", "weight_granularity", "relu_activation_grid"]
 SUMMARY_METRICS = ("success_rate", "mean_return", "mean_final_distance")
 
 
@@ -23,15 +23,30 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--bits", type=int, nargs="+", default=[8, 6, 5, 4, 3, 2])
     parser.add_argument("--methods", nargs="+", default=list(METHODS), choices=list(METHODS))
     parser.add_argument("--per-tensor", action="store_true", help="Use per-tensor weight scales")
+    parser.add_argument(
+        "--relu-grid",
+        default="unsigned",
+        choices=["unsigned", "signed"],
+        help="Grid for activations that come out of a ReLU",
+    )
     parser.add_argument("--finetune-set", nargs="*", default=[], metavar="KEY=VALUE")
     parser.add_argument("--scratch-set", nargs="*", default=[], metavar="KEY=VALUE")
     parser.add_argument("--output-dir", default="runs")
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Training device for QAT runs: auto, cpu, cuda, cuda:<index>, or mps",
+    )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--episodes", type=int, default=None)
     parser.add_argument("--out", required=True, help="Tidy per-seed CSV")
     parser.add_argument("--summary", required=True, help="Summary CSV across seeds")
     parser.add_argument("--timings", default=None, help="JSON with per-run training times")
     return parser.parse_args()
+
+
+def device_override(device: str | None) -> list[str]:
+    return [] if device is None else [f"device={device}"]
 
 
 def main() -> None:
@@ -42,9 +57,10 @@ def main() -> None:
         bit_widths=arguments.bits,
         methods=arguments.methods,
         per_channel_weights=not arguments.per_tensor,
+        relu_activation_grid=arguments.relu_grid,
         output_dir=arguments.output_dir,
-        finetune_overrides=arguments.finetune_set,
-        scratch_overrides=arguments.scratch_set,
+        finetune_overrides=[*arguments.finetune_set, *device_override(arguments.device)],
+        scratch_overrides=[*arguments.scratch_set, *device_override(arguments.device)],
     )
     started = time.perf_counter()
     rows, training_summaries = run_sweep(plan, arguments.workers, arguments.episodes)

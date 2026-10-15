@@ -8,7 +8,12 @@ from quantrl.config import EnvConfig, QuantConfig, SACConfig, load_config
 from quantrl.envs.factory import env_dimensions, make_env
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluation_seeds
-from quantrl.quant.layers import QuantLinear, activation_quantizers, actor_linear_factory
+from quantrl.quant.layers import (
+    QuantLinear,
+    activation_quantizers,
+    actor_linear_factory,
+    quant_layers,
+)
 from quantrl.quant.ptq import collect_calibration_inputs, quantize_actor_post_training
 from quantrl.quant.qat import initialize_agent_from_checkpoint
 from quantrl.sweep import (
@@ -24,6 +29,7 @@ from quantrl.training import train
 from quantrl.viz.video import check_same_environment, compose_side_by_side
 
 SMOKE_OVERRIDES = [
+    "device=cpu",
     "sac.hidden_sizes=[32, 32]",
     "sac.batch_size=32",
     "train.total_steps=200",
@@ -110,7 +116,7 @@ def test_acting_does_not_move_activation_ranges():
         SACConfig(hidden_sizes=[16]),
         actor_linear_factory=actor_linear_factory(QuantConfig(weight_bits=4, activation_bits=4)),
     )
-    first_quantizer = agent.actor.network[0].input_quantizer
+    first_quantizer = quant_layers(agent.actor)[0].input_quantizer
     agent.actor(torch.ones(2, 13))
     before = first_quantizer.running_max_abs.clone()
     agent.act(np.full((1, 13), 50.0, dtype=np.float32))
@@ -191,7 +197,7 @@ def test_sweep_plan_builds_named_runs(fp32_run):
     ]
     finetune = next(c for c in configs if c.name == "base_qat_finetune_w4a4")
     assert finetune.train.total_steps == 500
-    assert finetune.train.init_checkpoint.endswith("checkpoint.pt")
+    assert str(finetune.train.init_checkpoint).endswith("checkpoint.pt")
     assert finetune.quant.per_channel_weights
     scratch = next(c for c in configs if c.name == "base_qat_scratch_w2a2")
     assert scratch.train.init_checkpoint is None

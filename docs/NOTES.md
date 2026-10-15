@@ -33,6 +33,10 @@ This file explains how the code is organized and why. It is updated in the same 
 | `src/quantrl/viz/plots.py` | Shared plot style and training curves across seeds. |
 | `src/quantrl/utils/seeding.py` | Seeds Python, NumPy, and torch, enables deterministic torch algorithms, and resolves the device string. |
 | `src/quantrl/utils/run_info.py` | Collects the git commit, whether the tree was dirty, package versions, Python version, and platform for each run. |
+| `src/quantrl/utils/device.py` | The one place devices are chosen: `auto` tries CUDA (including ROCm builds), then MPS, then CPU; explicit devices fail with a message listing what is available. Also describes the device and torch build for run metadata. |
+| `src/quantrl/utils/wandb_logging.py` | Optional Weights and Biases mirror of the progress log, offline by default, off unless `logging.wandb` is true. |
+| `src/quantrl/resume.py` | Captures and restores the full training state (networks, optimizers, temperature, normalizer, replay buffer, counters, every random number generator) in `resume_state.pt`, written atomically, and refuses to resume when the config changed in a way that matters. |
+| `src/quantrl/rendering.py` | Chooses MuJoCo's OpenGL backend before MuJoCo is imported, checks that the EGL or OSMesa library exists, and explains what to install when it does not. |
 | `src/quantrl/quant/quantizer.py` | Pure functions: bit-width validation, scales, integer quantization, fake quantization with the straight-through estimator. |
 | `src/quantrl/quant/layers.py` | `ActivationQuantizer` (range tracking and fake quantization of a layer input), `QuantLinear` (a drop-in `nn.Linear` with quantized weights and inputs), and `build_quantized_actor`. |
 | `src/quantrl/quant/ptq.py` | Post-training quantization: copy fp32 weights into a quantized actor, calibrate activation ranges, and collect calibration inputs by running a policy. |
@@ -44,6 +48,9 @@ This file explains how the code is organized and why. It is updated in the same 
 | `scripts/make_plots.py` | Plots training curves (`--runs`), the PTQ grid (`--ptq-csv`), or the method comparison (`--sweep-csv`). |
 | `scripts/make_video.py` | Renders labeled evaluation episodes of a checkpoint to mp4 and gif, or two policies side by side on the same episodes (`--compare-checkpoint`, or `--compare-ptq-bits` for a PTQ copy of the same actor). |
 | `scripts/sweep.py` | Runs the sweep and writes a tidy per-seed CSV, a summary across seeds, and per-run training times. |
+| `scripts/smoke_test.py` | One-command end-to-end check on a chosen device with a PASS or FAIL table and a nonzero exit code on failure. |
+| `scripts/install.sh` | Installs the locked environment with the CPU, CUDA 12.6, CUDA 13.0, or ROCm 7.2 build of torch and prints what torch can see. |
+| `scripts/cluster_smoke.sh`, `cluster/` | The cluster checks and Slurm submission described in `docs/CLUSTER_RUNBOOK.md`. |
 | `configs/` | JSON run configs. Any field not given keeps its dataclass default. |
 | `results/` | Small CSV and JSON metric files that are committed. |
 | `assets/` | A few small clips and plots used by the README. |
@@ -158,7 +165,7 @@ The forward value is `round(v)`. The `detach` removes the correction term from t
 
 `x_hat = clamp(round_ste(x / s), -L, L) * s`
 
-and its gradient with respect to `x` is 1 where `x` is inside `[-L * s, L * s]` and 0 where the clamp is active. This "clipped STE" stops pushing on values that are already saturated. The scale `s` is treated as a constant (weights' scale is computed from detached values, and activation ranges are buffers), so there is no learned step size. Tests check the gradient is exactly 1 inside the range and 0 outside, and that gradients reach `QuantLinear` weights.
+and its gradient with respect to `x` is 1 when `round(x / s)` lies inside [-L, L], edges included, and 0 when the value is saturated beyond the range. This "clipped STE" stops pushing on values that are already saturated. The code takes the gradient mask from the rounded level explicitly, because PyTorch's clamp gives zero gradient to a value exactly on its boundary; an earlier version relied on the clamp and so also blocked gradients for every value that rounded to the outermost level (see docs/DESIGN.md, concern H). The scale `s` is treated as a constant (weights' scale is computed from detached values, and activation ranges are buffers), so there is no learned step size. Tests check the gradient is exactly 1 inside the range and 0 outside, and that gradients reach `QuantLinear` weights.
 
 ### Building a quantized actor
 
@@ -238,7 +245,7 @@ At 3 and 2 bits even QAT from scratch scores slightly below the 8 percent do-not
 
 ## Known limitations
 
-- Activations are quantized symmetrically even after a ReLU, where they are never negative, so half of the integer range goes unused for hidden activations. An unsigned activation quantizer would give post-ReLU activations one extra bit of resolution. The symmetric version is kept for now because it is what the project specifies; this matters most at 2 and 3 bits, where a post-ReLU activation can only take 2 or 4 distinct values.
+- Layer inputs that come out of a ReLU use an unsigned grid (levels 0 to 2^b - 1) by default, since they are never negative. The first layer's input, the normalized observation, stays on the symmetric grid. Results produced before this change used the symmetric grid everywhere; `quant.relu_activation_grid = "signed"` restores that, and saved quantized runs without the field are read that way.
 - The scale is the maximum magnitude, not a percentile or a learned step size, so a single outlier activation in the calibration data stretches the grid for everything else.
 
 - The mujoco pin above should be revisited when gymnasium-robotics releases a fix.

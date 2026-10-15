@@ -35,31 +35,34 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def series_label(row: pd.Series) -> str:
+def series_label(row: pd.Series, show_grid: bool = False) -> str:
     target = TARGET_LABELS[row["target"]]
     if row["target"] == "activations":
-        return target
-    return f"{target}, {GRANULARITY_LABELS[row['weight_granularity']]} weights"
+        label = target
+    else:
+        label = f"{target}, {GRANULARITY_LABELS[row['weight_granularity']]} weights"
+    if show_grid and row["target"] != "weights":
+        label += f", {row['relu_activation_grid']} ReLU grid"
+    return label
 
 
 def plot_ptq(arguments: argparse.Namespace) -> None:
     frame = pd.read_csv(arguments.ptq_csv)
     if arguments.targets:
         frame = frame[frame["target"].isin(arguments.targets)]
-    frame = frame.assign(series=frame.apply(series_label, axis=1))
-    order = [
-        f"{TARGET_LABELS[target]}, {GRANULARITY_LABELS[granularity]} weights"
-        for target in ("both", "weights")
-        for granularity in ("per_tensor", "per_channel")
-    ] + [TARGET_LABELS["activations"]]
-    present = [name for name in order if name in set(frame["series"])]
+    show_grid = (
+        "relu_activation_grid" in frame.columns and frame["relu_activation_grid"].nunique() > 1
+    )
+    frame = frame.assign(series=frame.apply(series_label, axis=1, show_grid=show_grid))
+    present = list(dict.fromkeys(frame["series"]))
     plot_success_vs_bits(frame, arguments.out, arguments.title, "series", present)
 
 
 def plot_sweep(arguments: argparse.Namespace) -> None:
     frame = pd.read_csv(arguments.sweep_csv)
     methods = [method for method in METHOD_LABELS if method in set(frame["method"])]
-    expanded = pd.DataFrame(baseline_rows_for_methods(frame.to_dict("records"), methods))
+    records = [{str(key): value for key, value in row.items()} for row in frame.to_dict("records")]
+    expanded = pd.DataFrame(baseline_rows_for_methods(records, methods))
     expanded = expanded.assign(series=expanded["method"].map(METHOD_LABELS))
     order = [METHOD_LABELS[method] for method in methods]
     plot_success_vs_bits(expanded, arguments.out, arguments.title, "series", order)
