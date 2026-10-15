@@ -10,64 +10,64 @@ Baseline at the start of the audit (run on the development Mac, Apple M5, 16 GB,
 
 ## Requirements checklist
 
-Status is one of **present** (exists and is backed by a test or a run), **partial** (exists but incomplete or untested in an important way), or **missing**.
+Status is one of **present** (exists and is backed by a test or a run), **partial** (exists but incomplete or untested in an important way), or **missing**. The status at the start of the audit is in the second column; the evidence column says what proves the current status. "CI" means the GitHub Actions run on pull request #9 (Ubuntu, no GPU, no display); "Mac" means the development Mac (Apple M5, CPU and MPS).
 
 ### Reproducibility and runtime
 
-| # | Requirement | Status | Evidence and notes |
-| --- | --- | --- | --- |
-| 1 | Seed Python, NumPy, torch, and the environment | present | `utils/seeding.py: seed_everything` seeds `random`, `numpy`, and `torch`; `training.py` calls `env.reset(seed=...)` once and `env.action_space.seed(...)`; the replay buffer draws from a NumPy generator made from the same seed. `tests/test_training_smoke.py::test_training_is_reproducible_on_cpu` trains twice and checks bitwise identical actor weights. |
-| 2 | Deterministic mode that can be switched on or off | partial | `torch.use_deterministic_algorithms(True)` is always switched on and cannot be turned off from the config. On CUDA this setting makes matrix multiplies raise an error unless the environment variable `CUBLAS_WORKSPACE_CONFIG` is set, which the code does not do. Not runnable here (no CUDA). |
-| 3 | Determinism test on the first N training metrics | partial | The existing test compares final actor weights, not the logged metrics. Same intent, different check. |
-| 4 | One device-selection function (cuda, then mps, then cpu) with an override | partial | `utils/seeding.py: resolve_device` handles `"auto"` as mps then cpu and never tries cuda. The config default is the fixed string `"cpu"`. The only override is `--set device=...`. |
-| 5 | No hardcoded devices | present | Search for `"cuda"`, `.cuda(`, `"mps"`, `torch.backends` finds only `resolve_device` and one MPS test (search output is in the audit report). Tensors are created on `agent.device`. |
-| 6 | float32 tensors on every device | present | Every tensor entering the networks goes through `torch.as_tensor(..., dtype=torch.float32)`. float64 appears only in NumPy code (normalizer statistics, bootstrap), which runs on the CPU. |
-| 7 | Headless MuJoCo rendering on a Linux cluster (EGL or OSMesa, selectable) | missing | Nothing sets or reads `MUJOCO_GL`. Rendering works on macOS through the default backend. On a Linux node without a display, video rendering would most likely fail; not testable here. |
-| 8 | Training never depends on rendering | present | Training and evaluation create environments without a render mode (`make_env(config.env)`). Only `viz/video.py` asks for `render_mode="rgb_array"`. |
-| 9 | One typed, validated config that fails fast | partial | Configs are dataclasses loaded from JSON. Unknown keys and non-object sections are rejected (`tests/test_config.py`). Bit widths are validated, but only when a quantized layer is built. Nothing checks learning rates, sizes, gamma, tau, the device string, `quant.method`, or paths at startup. |
-| 10 | Runtime checks on observation and action shapes, dtypes, and bounds | partial | Shapes are checked only when a run starts from another checkpoint (`quant/qat.py: check_dimensions`). Actions are in [-1, 1] by construction (tanh), but nothing asserts it. |
-| 11 | NaN and inf checks on losses, Q values, and gradients | missing | No such checks. A NaN would propagate silently into the logs. |
-| 12 | Clear errors when a checkpoint does not match the config | partial | Network weights load strictly (shape or key mismatch raises an error). There is no check that a checkpoint's config matches the run that loads it. |
-| 13 | Checkpoint holds the full training state | partial | Saved: actor, critics, target critics, all three optimizers, the entropy temperature, the observation normalizer, the step counter, the config, and run metadata. Not saved: the replay buffer, the episode counter, the evaluation and checkpoint schedule, and the random number generator states (Python, NumPy generator, torch, environment). |
-| 14 | Resume an interrupted run and match an uninterrupted run | missing | There is no resume path. `train.init_checkpoint` starts a new run from a checkpoint's weights, which is QAT fine-tuning, not resume. |
-| 15 | Pinned dependencies with the Python version | partial | `uv.lock` pins every package and `.python-version` pins 3.12. On Linux, however, `pyproject.toml` forces the CPU-only torch build (`torch 2.14.1+cpu`, confirmed in `uv.lock`), which was added so CI does not download CUDA. On a GPU cluster this would make the GPU unusable. |
-| 16 | One install script for Mac and a Linux cluster | missing | Installation is `uv sync` as described in the README. There is no script and no way to choose a CUDA or ROCm torch build. |
-| 17 | No absolute local paths; all paths from config or arguments | present | Searching `src`, `scripts`, `tests`, `configs`, and CI for `/Users/`, `/home/`, `/private/` finds nothing. Output goes to `output_dir` from the config. |
-| 18 | Metrics written to local files | present | Each run writes `config.json`, `metadata.json`, `progress.csv`, and `summary.json`. Sweeps write tidy CSV and JSON into `results/`. No network is needed. |
-| 19 | Optional Weights and Biases in offline mode | missing | Not present. Marked optional in the request. |
-| 20 | Run metadata (git commit, package versions, seed, device) | present | `utils/run_info.py`, written to `metadata.json` for every run. |
+| # | Requirement | Before | Now | Evidence |
+| --- | --- | --- | --- | --- |
+| 1 | Seed Python, NumPy, torch, and the environment | present | present | `utils/seeding.py`; `tests/test_devices.py::test_same_seed_gives_the_same_training_metrics_on_device` passes on CPU and MPS (Mac). |
+| 2 | Deterministic mode that can be switched on or off | partial | present | `deterministic` config field; on CUDA it sets `CUBLAS_WORKSPACE_CONFIG`. The CUDA path itself has not run (no GPU). |
+| 3 | Same seed gives the same first N training metrics | partial | present | `test_same_seed_gives_the_same_training_metrics_on_device` compares every logged metric row (CPU and MPS). |
+| 4 | One device-selection function, cuda then mps then cpu, with an override | partial | present | `utils/device.py: resolve_device`; `--device` on `train.py`, `sweep.py`, and `smoke_test.py`; `test_auto_prefers_cuda_then_mps_then_cpu`. |
+| 5 | No hardcoded devices | present | present | Repo search in the audit report: only the list of valid device names and device-specific random-state saving remain. |
+| 6 | float32 tensors on every device | present | present | `test_sac_update_runs_on_device` checks float32 parameters on CPU and MPS. |
+| 7 | Headless MuJoCo rendering, EGL or OSMesa, selectable | missing | present | `rendering.py`, `make_video.py --render-backend`; CI renders a frame with EGL and with OSMesa on a machine with no display (`tests/test_rendering.py::test_headless_linux_rendering`). |
+| 8 | Training never depends on rendering | present | present | Training creates no renderer; CI runs all training tests headless with no OpenGL libraries installed. |
+| 9 | One typed, validated config that fails fast | partial | present | `config.py: validate_config`, called on every load; `tests/test_config.py` checks 23 bad values and that all problems are reported together; all 86 configs saved by earlier runs still pass. |
+| 10 | Runtime checks on observation and action shapes, dtypes, and bounds | partial | present | `check_goal_env`, `check_goal_observation`, `check_action`, replay-buffer input checks; `tests/test_runtime_checks.py`. |
+| 11 | NaN and inf checks on losses, Q values, and gradients | missing | present | `require_finite` in every SAC update (batch, targets, Q values, losses, gradient norms); `tests/test_runtime_checks.py` injects NaN weights and infinite rewards. |
+| 12 | Clear errors when a checkpoint does not match the config | partial | present | `check_checkpoint_matches` for starting checkpoints and `check_resume_compatible` for resume; both have tests. |
+| 13 | Checkpoint holds the full training state | partial | present | `resume_state.pt`: networks, targets, optimizers, temperature, normalizer, replay buffer, counters, schedule, all random states. `test_saved_state_holds_the_full_training_state`. |
+| 14 | Resume matches an uninterrupted run | missing | present | `tests/test_resume.py` (stop and extend, and crash after a periodic save) and `test_resume_on_device_matches_an_uninterrupted_run` (CPU and MPS) compare every metric and all weights exactly. |
+| 15 | Pinned dependencies with the Python version | partial | present | `uv.lock` pins torch 2.14.1 for CPU, CUDA 12.6, CUDA 13.0, and ROCm 7.2; CI resolves each GPU environment on Linux. |
+| 16 | One install script for Mac and a Linux cluster | missing | present | `scripts/install.sh`; run on the Mac and in CI. Not yet run on a GPU node. |
+| 17 | No absolute local paths | present | present | Repo search in the audit report finds none in code, configs, tests, or CI. |
+| 18 | Metrics written to local files | present | present | `tests/test_logging.py::test_metrics_go_to_local_files_without_any_network`. |
+| 19 | Optional Weights and Biases in offline mode | missing | present | `logging.wandb`, offline by default; tested with a stand-in wandb module. The real wandb package was not exercised. |
+| 20 | Run metadata (git commit, versions, seed, device) | present | present | `metadata.json` now also records the torch CUDA and ROCm builds and visible devices. |
 
 ### Experiment content
 
-| # | Requirement | Status | Evidence and notes |
-| --- | --- | --- | --- |
-| 21 | Full-precision baseline | present | fp32 runs for FetchReach and FetchPush, 3 seeds each, in `results/`. |
-| 22 | Evaluation at each bit width on the same episodes | present | `sweep.py` builds one seed list and passes it to every evaluator (`tests/test_qat.py::test_sweep_uses_one_seed_list_for_every_method`). |
-| 23 | Logged metrics that the plots need | present | `progress.csv` (training curves) and the sweep CSVs (bit-width plots). |
-| 24 | Plots generated from logs | partial | `scripts/make_plots.py` works from the CSVs. The bit-width plot has a test (`tests/test_ptq_evaluation.py`); the training-curve plot does not. |
+| # | Requirement | Before | Now | Evidence |
+| --- | --- | --- | --- | --- |
+| 21 | Full-precision baseline | present | present | `results/` for both tasks. |
+| 22 | Evaluation at each bit width on the same episodes | present | present | `test_sweep_uses_one_seed_list_for_every_method`. |
+| 23 | Logged metrics that the plots need | present | present | `progress.csv` and sweep CSVs. |
+| 24 | Plots generated from logs | partial | present | `tests/test_plot_script.py` runs `make_plots.py` on small fake logs for all three plot types; the smoke test draws plots from real logs. |
 
 ### Tests
 
-| # | Requirement | Status | Evidence and notes |
-| --- | --- | --- | --- |
-| 25 | Quantizer: values on the grid, saturation, 2, 4, and 8 bits, exact identity at full precision, gradients through the STE, closeness at high bit width, per-tensor and per-channel scales | present | `tests/test_quantization.py`. Added on this branch: saturation on both grids, gradient 1 at the outermost levels on both grids, gradient 0 beyond half a step past the range, and gradient 1 for every weight at every bit width. |
-| 26 | SAC: squashing and log-probability correction, output shapes, soft target update, temperature update direction, critic and actor parameters change, finite losses | partial | Covered: log-probability against `torch.distributions`, deterministic action, finite losses, actor and target parameters change. Missing: exact Polyak formula, temperature direction, critic parameter change, explicit output shapes. |
-| 27 | Replay buffer: wrap-around, sample shapes and dtypes, no uninitialized data | partial | Wrap-around and relabeling are tested. Shapes and dtypes are not checked explicitly. Sampling from an empty buffer raises a NumPy error instead of a clear message. |
-| 28 | Environment contracts: spaces, reset and step types, goal handling, reward range | partial | `tests/test_environment.py` covers FetchReach observation keys and shapes and the vectorized reward. FetchPush, reset and step return types, and the reward range are not covered. There is no wrapper class; observation flattening happens in the normalizer. |
-| 29 | Device-parametrized core tests (cpu and mps here) | missing | One MPS test exists. The core tests run on CPU only. |
-| 30 | Resume test | missing | No resume feature to test. |
-| 31 | Plot script on a tiny fake log | partial | See row 24. |
-| 32 | One-command smoke test under 5 minutes with PASS or FAIL | missing | No such script. |
+| # | Requirement | Before | Now | Evidence |
+| --- | --- | --- | --- | --- |
+| 25 | Quantizer tests | partial | present | `tests/test_quantization.py`, including both grids, saturation, and the edge-gradient fix. |
+| 26 | SAC tests | partial | present | `tests/test_sac.py`: output shapes and dtypes, exact Polyak formula, temperature direction, critic and actor parameters change, finite losses. |
+| 27 | Replay buffer tests | partial | present | `tests/test_replay.py`: shapes and dtypes, no samples from unwritten slots, wrap-around order. |
+| 28 | Environment contract tests | partial | present | `tests/test_environment.py` and `test_runtime_checks.py` for both tasks: spaces, reset and step types, goal handling, reward range. |
+| 29 | Core tests on every available device | missing | present | `tests/test_devices.py` runs on CPU and MPS on the Mac; CUDA cases skip with a message and are expected to run on the cluster. |
+| 30 | Resume test | missing | present | Row 14. |
+| 31 | Plot script on a tiny fake log | partial | present | Row 24. |
+| 32 | One-command smoke test under 5 minutes with PASS or FAIL | missing | present | `scripts/smoke_test.py`: 11 s on CPU and 27 s on MPS on the Mac; exits nonzero on failure (`tests/test_smoke_script.py` injects a failure). |
 
 ### Static checks and cluster readiness
 
-| # | Requirement | Status | Evidence and notes |
-| --- | --- | --- | --- |
-| 33 | ruff clean, in CI | present | `.github/workflows/ci.yml` runs `ruff check`, `ruff format --check`, and `pytest` on every pull request. |
-| 34 | mypy or pyright clean | missing | Neither tool is installed or configured. |
-| 35 | Cluster smoke script and Slurm template | missing | |
-| 36 | Cluster runbook | missing | |
-| 37 | CPU-forced and GPU-hidden fallback runs | missing | No forced-CPU or hidden-GPU run has been done. |
+| # | Requirement | Before | Now | Evidence |
+| --- | --- | --- | --- | --- |
+| 33 | ruff clean, in CI | present | present | CI. |
+| 34 | mypy clean | missing | present | `uv run mypy` reports no issues in 57 files, locally and in CI. |
+| 35 | Cluster smoke script and Slurm submission | missing | present | `scripts/cluster_smoke.sh`, `cluster/submit_smoke.sh`, `cluster/smoke.sbatch`; run on the Mac and in CI. Not run on Slurm. |
+| 36 | Cluster runbook | missing | present | `docs/CLUSTER_RUNBOOK.md`. |
+| 37 | CPU-forced and GPU-hidden fallback runs | missing | present | The smoke test with `--device cpu` and with all GPU visibility variables empty, on the Mac and in CI. Not yet on a machine that has a GPU to hide. |
 
 ## Pipeline at a glance
 
@@ -332,7 +332,9 @@ Each run directory `runs/<name>_seed<seed>/` contains:
 | `metadata.json` | Seed, git commit and dirty flag, package versions, Python, platform, device, thread count, start time, and the initial checkpoint if any. |
 | `progress.csv` | One row per periodic evaluation. |
 | `summary.json` | Final evaluation and timings. |
-| `checkpoint.pt` | See requirement 13 for what is saved. |
+| `checkpoint.pt` | The policy: config, actor and critic weights, optimizers, temperature, normalizer, dimensions, metadata, and step count. Used for evaluation, PTQ, and QAT fine-tuning. |
+| `resume_state.pt` | The full training state for `--resume` (requirement 13), written atomically at every checkpoint interval and at the end. |
+| `checkpoint_<step>.pt` | Periodic policy checkpoints when `train.checkpoint_interval` is set. |
 
 The `runs/` folder is ignored by git; only small CSV and JSON summaries are copied into `results/`.
 
@@ -361,7 +363,7 @@ It then evaluates, on one shared list of seeds:
 ## Devices and dtypes
 
 - Every network tensor is float32.
-- The device comes from `config.device`, which defaults to `"cpu"`. `"auto"` picks MPS if available, otherwise CPU, and never CUDA (requirement 4).
+- The device comes from `config.device` or `--device`, which defaults to `"auto"`: CUDA if available (including ROCm builds, which use the same API), then MPS, then CPU. Explicit `cpu`, `mps`, `cuda`, or `cuda:<index>` fail with a clear message if unavailable. Published results used CPU, so reproducing them exactly needs `--device cpu`.
 - Device placement is consistent: networks are moved to the agent's device, batches are converted with `device=agent.device`, and actions come back with `.cpu().numpy()`.
 - PTQ builds the quantized actor on the source actor's device and dtype.
 - CPU with one thread is the default and the setup used for every reported result. Measured earlier in the project: one SAC update takes 1.6 ms on one CPU thread against 4.4 ms on MPS for the FetchReach network.

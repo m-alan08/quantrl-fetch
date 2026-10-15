@@ -33,6 +33,10 @@ This file explains how the code is organized and why. It is updated in the same 
 | `src/quantrl/viz/plots.py` | Shared plot style and training curves across seeds. |
 | `src/quantrl/utils/seeding.py` | Seeds Python, NumPy, and torch, enables deterministic torch algorithms, and resolves the device string. |
 | `src/quantrl/utils/run_info.py` | Collects the git commit, whether the tree was dirty, package versions, Python version, and platform for each run. |
+| `src/quantrl/utils/device.py` | The one place devices are chosen: `auto` tries CUDA (including ROCm builds), then MPS, then CPU; explicit devices fail with a message listing what is available. Also describes the device and torch build for run metadata. |
+| `src/quantrl/utils/wandb_logging.py` | Optional Weights and Biases mirror of the progress log, offline by default, off unless `logging.wandb` is true. |
+| `src/quantrl/resume.py` | Captures and restores the full training state (networks, optimizers, temperature, normalizer, replay buffer, counters, every random number generator) in `resume_state.pt`, written atomically, and refuses to resume when the config changed in a way that matters. |
+| `src/quantrl/rendering.py` | Chooses MuJoCo's OpenGL backend before MuJoCo is imported, checks that the EGL or OSMesa library exists, and explains what to install when it does not. |
 | `src/quantrl/quant/quantizer.py` | Pure functions: bit-width validation, scales, integer quantization, fake quantization with the straight-through estimator. |
 | `src/quantrl/quant/layers.py` | `ActivationQuantizer` (range tracking and fake quantization of a layer input), `QuantLinear` (a drop-in `nn.Linear` with quantized weights and inputs), and `build_quantized_actor`. |
 | `src/quantrl/quant/ptq.py` | Post-training quantization: copy fp32 weights into a quantized actor, calibrate activation ranges, and collect calibration inputs by running a policy. |
@@ -44,6 +48,9 @@ This file explains how the code is organized and why. It is updated in the same 
 | `scripts/make_plots.py` | Plots training curves (`--runs`), the PTQ grid (`--ptq-csv`), or the method comparison (`--sweep-csv`). |
 | `scripts/make_video.py` | Renders labeled evaluation episodes of a checkpoint to mp4 and gif, or two policies side by side on the same episodes (`--compare-checkpoint`, or `--compare-ptq-bits` for a PTQ copy of the same actor). |
 | `scripts/sweep.py` | Runs the sweep and writes a tidy per-seed CSV, a summary across seeds, and per-run training times. |
+| `scripts/smoke_test.py` | One-command end-to-end check on a chosen device with a PASS or FAIL table and a nonzero exit code on failure. |
+| `scripts/install.sh` | Installs the locked environment with the CPU, CUDA 12.6, CUDA 13.0, or ROCm 7.2 build of torch and prints what torch can see. |
+| `scripts/cluster_smoke.sh`, `cluster/` | The cluster checks and Slurm submission described in `docs/CLUSTER_RUNBOOK.md`. |
 | `configs/` | JSON run configs. Any field not given keeps its dataclass default. |
 | `results/` | Small CSV and JSON metric files that are committed. |
 | `assets/` | A few small clips and plots used by the README. |
