@@ -1,6 +1,6 @@
 # Design
 
-This document describes what the code in this repository actually does, stage by stage, for a reader who knows reinforcement learning and quantization but does not want to read the code. Every statement about behavior was checked against the source on the `audit-hardening` branch, which starts from main at commit `d9fcb67`. Where something was measured, the command and result are given.
+This document describes what the code in this repository actually does, stage by stage, for a reader who knows reinforcement learning and quantization but does not want to read the code. Every statement about behavior was checked against the source on the `audit-hardening` branch, which starts from main at commit `d9fcb67`. Where something was measured, the command and result are given. Changes made on this branch so far: the unsigned activation grid after ReLU (concern B, fixed at your request).
 
 Baseline at the start of the audit (run on the development Mac, Apple M5, 16 GB, macOS):
 
@@ -50,7 +50,7 @@ Status is one of **present** (exists and is backed by a test or a run), **partia
 
 | # | Requirement | Status | Evidence and notes |
 | --- | --- | --- | --- |
-| 25 | Quantizer: values on the grid, saturation, 2, 4, and 8 bits, exact identity at full precision, gradients through the STE, closeness at high bit width, per-tensor and per-channel scales | partial | All covered in `tests/test_quantization.py` except an explicit check that values beyond the range saturate at exactly plus or minus the largest level. |
+| 25 | Quantizer: values on the grid, saturation, 2, 4, and 8 bits, exact identity at full precision, gradients through the STE, closeness at high bit width, per-tensor and per-channel scales | partial | Covered in `tests/test_quantization.py`, including saturation on both grids (added on this branch). The STE test only checks values away from the outermost levels; at those levels the gradient is currently 0, which contradicts the documented math (concern H). |
 | 26 | SAC: squashing and log-probability correction, output shapes, soft target update, temperature update direction, critic and actor parameters change, finite losses | partial | Covered: log-probability against `torch.distributions`, deterministic action, finite losses, actor and target parameters change. Missing: exact Polyak formula, temperature direction, critic parameter change, explicit output shapes. |
 | 27 | Replay buffer: wrap-around, sample shapes and dtypes, no uninitialized data | partial | Wrap-around and relabeling are tested. Shapes and dtypes are not checked explicitly. Sampling from an empty buffer raises a NumPy error instead of a clear message. |
 | 28 | Environment contracts: spaces, reset and step types, goal handling, reward range | partial | `tests/test_environment.py` covers FetchReach observation keys and shapes and the vectorized reward. FetchPush, reset and step return types, and the reward range are not covered. There is no wrapper class; observation flattening happens in the normalizer. |
@@ -105,7 +105,7 @@ PTQ, QAT fine-tuning, QAT from scratch (sweep) -> results/*.csv -> plots, videos
 **Inputs.** An action of shape (4,), float32, in [-1, 1].
 
 - The first three components move the gripper. The environment multiplies them by 0.05, so each component is a target displacement of at most 5 cm along x, y, or z per step.
-- The fourth component opens or closes the gripper. FetchReach ignores it.
+- The fourth component would open or close the gripper, but both FetchReach and FetchPush are created with `block_gripper=True`, so it is ignored in both tasks. The actor still outputs four numbers.
 
 **Outputs.** `reset` and `step` return a dict observation:
 
@@ -206,7 +206,7 @@ Each update has these steps, in order:
 | Part | Quantized? |
 | --- | --- |
 | Actor weights | Yes, every linear layer. |
-| Actor layer inputs | Yes: the normalized input to the first layer and the ReLU output feeding every later layer. |
+| Actor layer inputs | Yes: the normalized input to the first layer (symmetric grid) and the ReLU output feeding every later layer (unsigned grid by default, see below). |
 | Actor biases | No, kept in fp32. |
 | Actor outputs (mean and log std) | No, kept in fp32. |
 | Critics | No, by default. A flag (`quant.quantize_critics`) exists but no reported run used it. |
@@ -217,14 +217,34 @@ Weights and activations can have different bit widths. All reported runs used th
 
 32 means "disabled": the layer is exactly an `nn.Linear`. Low bit widths are integers from 2 to 16. Anything else, such as 33 or 4.5, is rejected with an error. The reported runs used 8, 6, 5, 4, 3, and 2.
 
-### The grid
+### The grids
 
-Symmetric and uniform. With b bits the integer levels are -L to L where `L = 2^(b - 1) - 1`. That gives 2L + 1 levels: 255 for 8 bits, 15 for 4 bits, 7 for 3 bits, 3 for 2 bits. Zero is always on the grid. A value x with scale s becomes `clamp(round(x / s), -L, L) * s`. Inside the range the error is at most s / 2; outside it, values saturate at plus or minus L * s.
+Two uniform grids are used. Zero is on both.
+
+- **Symmetric (signed):** integer levels -L to L where `L = 2^(b - 1) - 1`. That gives 2L + 1 levels: 255 for 8 bits, 15 for 4 bits, 7 for 3 bits, 3 for 2 bits. A value x with scale s becomes `clamp(round(x / s), -L, L) * s`. Used for all weights and for the first layer's input (the normalized observation, which can be negative).
+- **Unsigned:** integer levels 0 to `H = 2^b - 1`, so all 2^b levels are used: 256 for 8 bits, 16 for 4 bits, 8 for 3 bits, 4 for 2 bits. A value becomes `clamp(round(x / s), 0, H) * s`. Used for every layer input that comes out of a ReLU, since those are never negative. This is the default (`quant.relu_activation_grid = "unsigned"`). Setting it to `"signed"` restores the old behavior, where post-ReLU inputs used the symmetric grid and only 4 of its 7 levels at 3 bits could ever be reached.
+
+Inside the range the error is at most s / 2; outside it, values saturate at the outermost level.
+
+**Old runs.** Every quantized result produced before this branch used the signed grid for everything. A saved run or checkpoint that used quantization and has no `relu_activation_grid` field is read as `"signed"`, so it rebuilds exactly as it was trained. Re-evaluating three old QAT checkpoints this way reproduced their recorded success rate, return, and final distance exactly, and rerunning PTQ with the signed grid reproduced all 36 recorded per-channel PTQ success rates (3 seeds, 6 bit widths, both tasks) exactly.
+
+**Measured effect of the unsigned grid on PTQ** (per-channel weights, weights and activations at the same width, mean success over 3 seeds and 100 episodes; outputs in `runs/audit/`, not committed):
+
+| Bits | FetchReach signed | FetchReach unsigned | FetchPush signed | FetchPush unsigned |
+| --- | --- | --- | --- | --- |
+| 8 | 100.0 | 100.0 | 98.7 | 99.0 |
+| 6 | 100.0 | 100.0 | 95.0 | 98.0 |
+| 5 | 97.7 | 98.0 | 82.7 | 86.7 |
+| 4 | 82.0 | 88.0 | 14.7 | 20.7 |
+| 3 | 43.0 | 36.0 | 8.0 | 7.3 |
+| 2 | 0.0 | 0.0 | 8.0 | 8.0 |
+
+The unsigned grid helps at 4 to 6 bits and does not help at 3 bits, where the first layer's input (still on the symmetric grid) is the likely limit.
 
 ### Scales
 
 - **Weights:** `s = max|W| / L`, recomputed from the current weights at every forward pass. "Per tensor" uses one maximum for the whole matrix. "Per channel" uses one maximum per output row, so a row of small weights is not forced onto the coarse grid of a row of large weights. Weights are never clipped.
-- **Activations (layer inputs):** one scale per layer, `s = running_max_abs / L`. `running_max_abs` is a stored buffer that is updated in one of three ways:
+- **Activations (layer inputs):** one scale per layer, `s = running_max_abs / L` on the symmetric grid or `running_max_abs / H` on the unsigned grid. `running_max_abs` is a stored buffer that is updated in one of three ways:
   - During training, unless frozen: an exponential moving average of each batch's largest magnitude, `m * running + (1 - m) * max|x|` with m = 0.99. The first batch sets the value directly.
   - During PTQ calibration: the largest magnitude over all calibration inputs, after which the range is frozen.
   - In evaluation mode, or when frozen: no update.
@@ -237,10 +257,12 @@ The scale is floored at max(1e-8, the smallest normal number of the dtype), so a
 
 Training uses "fake quantization": values are quantized and immediately dequantized, so the arithmetic stays in float32 but every weight and activation lies on the grid.
 
-Rounding has zero gradient almost everywhere, so its backward pass is replaced by the identity: `round_ste(v) = v + (round(v) - v).detach()`. The clamp keeps its normal gradient. Overall, the gradient of a fake-quantized value with respect to its input is:
+Rounding has zero gradient almost everywhere, so its backward pass is replaced by the identity: `round_ste(v) = v + (round(v) - v).detach()`. The clamp keeps its normal gradient. The intended result, and what the documentation says, is:
 
-- 1 inside the range [-L s, L s];
-- 0 where it saturates.
+- gradient 1 inside the range [-L s, L s];
+- gradient 0 where values saturate.
+
+**What the code actually does differs at the edges (concern H).** The clamp is applied after rounding, and PyTorch's clamp gives zero gradient to a value exactly on its boundary. So every value that rounds to the outermost level (L or -L, and 0 on the unsigned grid) gets gradient 0, not just values beyond the range.
 
 Scales are treated as constants: weight scales are computed from detached weights and activation ranges are buffers, so no gradient flows to the scale.
 
@@ -344,9 +366,21 @@ It then evaluates, on one shared list of seeds:
 - PTQ builds the quantized actor on the source actor's device and dtype.
 - CPU with one thread is the default and the setup used for every reported result. Measured earlier in the project: one SAC update takes 1.6 ms on one CPU thread against 4.4 ms on MPS for the FetchReach network.
 
-## Math and design concerns for a decision
+## Math and design concerns
 
-None of these were changed. Each needs your decision.
+Decisions so far:
+
+| Concern | Decision |
+| --- | --- |
+| A. Critic target clipping | Kept as is. All reported results used it. |
+| B. Symmetric grid after ReLU | Fixed on this branch: post-ReLU inputs use the unsigned grid by default. Results produced before the fix used the signed grid and are labeled as such. |
+| C. What "an N-bit actor" means | Kept, and stated wherever results are quoted. |
+| D. PTQ calibration choices | Kept as is. |
+| E. Unequal training budgets | Intended: PTQ, a short fine-tune, and full training from scratch are the three points being compared. |
+| F, G | Noted; no change. |
+| H. Zero STE gradient at the outermost grid levels | Open, needs a decision. |
+
+The original descriptions follow.
 
 **A. Clipping the critic target to [-1/(1 - gamma), 0] in soft (entropy-regularized) SAC.**
 
@@ -392,9 +426,9 @@ This is a common convention, but it should be stated wherever results are quoted
 
 These are standard simple choices, and alternatives could change the PTQ numbers.
 
-**E. Unequal training budgets across methods.**
+**E. Unequal training budgets across methods (intended).**
 
-PTQ gets no extra training, QAT fine-tuning gets 10 percent of the baseline's steps, and QAT from scratch gets 100 percent. On FetchPush the ranking (QAT from scratch first) may partly reflect budget. The fine-tuning recipe was also chosen from pilot runs on seed 0 at 3 and 4 bits on FetchReach.
+PTQ gets no extra training, QAT fine-tuning gets 10 percent of the baseline's steps, and QAT from scratch gets 100 percent. This is the intended comparison. When quoting the FetchPush ranking, it should be read as "with these budgets". The fine-tuning recipe was chosen from pilot runs on seed 0 at 3 and 4 bits on FetchReach.
 
 **F. Statistical strength.**
 
@@ -403,3 +437,27 @@ Every comparison uses 3 training seeds and 100 evaluation episodes per seed. Int
 **G. Success is measured at the final step only.**
 
 This is the standard Fetch convention, but it means a policy that reaches the goal and then drifts away counts as a failure. The final-distance metric is reported alongside.
+
+**H. The STE gives zero gradient at the outermost grid levels, not only beyond them.**
+
+The quantizer computes `clamp(round_ste(x / s), low, high)`. A value that rounds to exactly `low` or `high` sits on the clamp's boundary, and PyTorch's clamp returns gradient 0 there. Checked directly with torch 2.14.1: clamp(0.0, 0, 3) and clamp(3.0, 0, 3) both have gradient 0, while clamp(1e-7, 0, 3) and clamp(2.9999, 0, 3) have gradient 1. The standard straight-through estimator, and PyTorch's own fake-quantize, pass gradient 1 for every value whose rounded level lies inside the range, edges included.
+
+How much it matters, measured on the trained seed-0 actors:
+
+| Bit width | Weights with zero gradient, per-channel scales (Reach / Push) | Same, per-tensor scales | Positive post-ReLU activations that round to 0 on the unsigned grid (Reach / Push) |
+| --- | --- | --- | --- |
+| 8 | 0.77% / 0.56% | 0.00% / 0.00% | 1.7% / 2.4% |
+| 6 | 0.86% / 0.59% | 0.00% / 0.00% | 5.2% / 9.9% |
+| 5 | 0.99% / 0.64% | 0.00% / 0.00% | 12.2% / 18.9% |
+| 4 | 1.47% / 0.78% | 0.00% / 0.00% | 22.0% / 35.8% |
+| 3 | 3.26% / 1.34% | 0.01% / 0.01% | 37.7% / 58.7% |
+| 2 | 21.31% / 8.56% | 0.22% / 0.13% | 85.6% / 85.3% |
+
+- **Effect on existing results:** the reported QAT runs used per-channel weights, so at 2 bits a fifth of the actor's weights on FetchReach (and 9 percent on FetchPush) never received a gradient, and at 3 bits 1 to 3 percent. At 4 bits and above the effect is about 1.5 percent of weights or less. On the old signed activation grid, activations were barely affected, because 0 was an interior level.
+- **Interaction with fix B:** on the unsigned grid, 0 is the bottom edge. Every small positive activation that rounds to 0 would get no gradient: 22 percent of them at 4 bits on FetchReach and 36 percent on FetchPush. QAT with the unsigned grid should not be run until this is decided.
+- PTQ is unaffected, since it uses no gradients.
+
+Options:
+
+1. **Fix it (recommended):** compute the gradient mask from the rounded level, so values whose rounded level lies inside the range get gradient 1 and only values beyond the range get 0. This matches the documented math and the standard STE. QAT results would then need rerunning: about 45 minutes for the FetchReach sweep and about 6 hours for the FetchPush sweep on this Mac. PTQ results only need rerunning because of fix B, which takes minutes.
+2. Keep the current behavior and document it.
