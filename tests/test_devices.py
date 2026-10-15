@@ -171,3 +171,27 @@ def test_resume_on_device_matches_an_uninterrupted_run(device, tmp_path):
     second = load_checkpoint(resumed.run_dir / "checkpoint.pt")["agent"]["actor"]
     for key in first:
         assert torch.equal(first[key], second[key])
+
+
+@pytest.mark.parametrize(
+    "cuda, mps, expected",
+    [(True, True, "cuda"), (True, False, "cuda"), (False, True, "mps"), (False, False, "cpu")],
+)
+def test_auto_prefers_cuda_then_mps_then_cpu(monkeypatch, cuda, mps, expected):
+    import quantrl.utils.device as device_module
+
+    monkeypatch.setattr(device_module.torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(device_module, "mps_available", lambda: mps)
+    assert device_module.resolve_device("auto").type == expected
+
+
+def test_hidden_gpus_fall_back_and_explicit_requests_explain_why(monkeypatch):
+    import quantrl.utils.device as device_module
+
+    monkeypatch.setattr(device_module.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(device_module, "mps_available", lambda: False)
+    assert device_module.resolve_device("auto").type == "cpu"
+    with pytest.raises(device_module.DeviceUnavailableError, match="CUDA is not available"):
+        device_module.resolve_device("cuda")
+    with pytest.raises(device_module.DeviceUnavailableError, match="'mps' was requested"):
+        device_module.resolve_device("mps")
