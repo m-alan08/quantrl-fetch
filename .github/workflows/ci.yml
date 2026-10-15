@@ -43,6 +43,11 @@ jobs:
         run: uv sync --locked
       - name: Render one frame with EGL and with OSMesa, no display
         run: QUANTRL_TEST_HEADLESS_RENDER=1 uv run pytest -q -rs tests/test_rendering.py
+      - name: Run the cluster smoke script on a headless Linux machine without GPUs
+        run: TORCH_VARIANT=cpu RUN_TESTS=0 RENDER=1 OUT_DIR=runs/cluster_smoke_ci scripts/cluster_smoke.sh
+      - name: Show the cluster smoke summary
+        if: always()
+        run: cat runs/cluster_smoke_ci/summary.txt
 
   gpu-install-plans:
     runs-on: ubuntu-latest
