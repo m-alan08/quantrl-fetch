@@ -23,6 +23,8 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
+    "mypy>=1.11",
+    "pandas-stubs>=2.2",
 ]
 cpu = ["torch==2.14.1"]
 cu126 = ["torch==2.14.1"]
@@ -40,6 +42,19 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "scripts", "tests"]
+mypy_path = "src"
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["gymnasium_robotics.*", "imageio.*", "mujoco.*", "wandb.*", "matplotlib.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

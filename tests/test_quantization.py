@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import numpy as np
 import pytest
 import torch
@@ -10,6 +12,7 @@ from quantrl.quant.layers import (
     QuantLinear,
     activation_quantizers,
     build_quantized_actor,
+    quant_layers,
 )
 from quantrl.quant.ptq import (
     calibrate_activation_ranges,
@@ -102,7 +105,7 @@ def test_invalid_bit_widths_are_rejected_by_layers():
     with pytest.raises(ValueError):
         QuantLinear(4, 2, weight_bits=33)
     with pytest.raises(ValueError):
-        ActivationQuantizer(4.5)
+        ActivationQuantizer(cast(Any, 4.5))
 
 
 def test_integer_quantization_rejects_the_disabled_bit_width():
@@ -179,7 +182,7 @@ def test_values_that_round_to_the_outermost_levels_still_get_gradient(signed):
     output = fake_quantize(values, torch.tensor(1.0), bits, signed=signed)
     assert torch.round(output).tolist() == [low, low, high, high]
     output.sum().backward()
-    assert values.grad.tolist() == [1.0, 1.0, 1.0, 1.0]
+    assert values.grad is not None and values.grad.tolist() == [1.0, 1.0, 1.0, 1.0]
 
 
 @pytest.mark.parametrize("signed", [True, False])
@@ -190,7 +193,7 @@ def test_values_beyond_half_a_step_past_the_range_get_no_gradient(signed):
     output = fake_quantize(values, torch.tensor(1.0), 3, signed=signed)
     assert output.tolist() == [low, low, high, high]
     output.sum().backward()
-    assert values.grad.tolist() == [0.0, 0.0, 0.0, 0.0]
+    assert values.grad is not None and values.grad.tolist() == [0.0, 0.0, 0.0, 0.0]
 
 
 def test_every_weight_inside_the_range_receives_gradient():
@@ -244,7 +247,7 @@ def test_calibration_records_max_abs_and_freezes():
     actor = build_quantized_actor(13, 4, SAC_CONFIG, QuantConfig(weight_bits=4, activation_bits=4))
     inputs = calibration_batch()
     calibrate_activation_ranges(actor, inputs, batch_size=100)
-    first_quantizer = actor.network[0].input_quantizer
+    first_quantizer = quant_layers(actor)[0].input_quantizer
     assert first_quantizer.running_max_abs.item() == pytest.approx(inputs.abs().max().item())
     assert bool(first_quantizer.frozen)
     assert not first_quantizer.calibrating
@@ -255,7 +258,7 @@ def test_calibration_rejects_empty_data_without_touching_ranges(empty):
     actor = build_quantized_actor(13, 4, SAC_CONFIG, QuantConfig(weight_bits=4, activation_bits=4))
     actor.train()
     actor(calibration_batch(rows=8))
-    quantizer = actor.network[0].input_quantizer
+    quantizer = quant_layers(actor)[0].input_quantizer
     before = quantizer.running_max_abs.clone()
     with pytest.raises(ValueError):
         calibrate_activation_ranges(actor, empty)

@@ -46,8 +46,10 @@ def update_batch(rows=16, dim=8, action_dim=2):
 
 def test_nan_weights_stop_training_with_a_clear_error():
     agent = SACAgent(8, 2, SACConfig(hidden_sizes=[16]))
+    first_layer = agent.critic.q1[0]
+    assert isinstance(first_layer, torch.nn.Linear)
     with torch.no_grad():
-        agent.critic.q1[0].weight[0, 0] = float("nan")
+        first_layer.weight[0, 0] = float("nan")
     with pytest.raises(NonFiniteTrainingError, match="Non-finite values in SAC update 1"):
         agent.update(update_batch())
 

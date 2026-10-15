@@ -10,6 +10,7 @@ def load_smoke_module():
     specification = importlib.util.spec_from_file_location(
         "smoke_test", Path("scripts/smoke_test.py")
     )
+    assert specification is not None and specification.loader is not None
     module = importlib.util.module_from_spec(specification)
     sys.modules["smoke_test"] = module
     specification.loader.exec_module(module)

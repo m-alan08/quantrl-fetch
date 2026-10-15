@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, cast
 
 import gymnasium as gym
 import gymnasium_robotics
@@ -25,7 +26,7 @@ def make_env(
     render_width: int = 480,
     render_height: int = 480,
 ) -> gym.Env:
-    kwargs = {}
+    kwargs: dict[str, Any] = {}
     if render_mode is not None:
         kwargs.update(render_mode=render_mode, width=render_width, height=render_height)
     if env_config.max_episode_steps is not None:
@@ -97,10 +98,17 @@ def check_goal_observation(observation: dict, dimensions: EnvDimensions) -> None
 
 
 def env_dimensions(env: gym.Env) -> EnvDimensions:
-    observation_space = env.observation_space
+    observation_space = cast(gym.spaces.Dict, env.observation_space)
+    action_space = cast(gym.spaces.Box, env.action_space)
+    if env.spec is None or env.spec.max_episode_steps is None:
+        raise EnvironmentContractError("environment must have a time limit (max_episode_steps)")
+    observation_shape = observation_space["observation"].shape
+    goal_shape = observation_space["desired_goal"].shape
+    if observation_shape is None or goal_shape is None:
+        raise EnvironmentContractError("observation and goal spaces must have fixed shapes")
     return EnvDimensions(
-        observation_dim=observation_space["observation"].shape[0],
-        goal_dim=observation_space["desired_goal"].shape[0],
-        action_dim=env.action_space.shape[0],
-        episode_length=env.spec.max_episode_steps,
+        observation_dim=int(observation_shape[0]),
+        goal_dim=int(goal_shape[0]),
+        action_dim=int(action_space.shape[0]),
+        episode_length=int(env.spec.max_episode_steps),
     )

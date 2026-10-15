@@ -6,7 +6,7 @@ import time
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -185,7 +185,7 @@ def train(
         observation_dim=dimensions.observation_dim,
         goal_dim=dimensions.goal_dim,
         action_dim=dimensions.action_dim,
-        reward_function=env.unwrapped.compute_reward,
+        reward_function=cast(Any, env.unwrapped).compute_reward,
         replay_k=config.her.replay_k,
         rng=rng,
     )
@@ -350,7 +350,7 @@ def train(
                     recent_metrics[key].append(value)
 
         save_due = next_checkpoint_step is not None and total_steps >= next_checkpoint_step
-        if save_due:
+        if save_due and next_checkpoint_step is not None:
             checkpoint(run_dir / f"checkpoint_{total_steps}.pt")
             next_checkpoint_step += config.train.checkpoint_interval
 

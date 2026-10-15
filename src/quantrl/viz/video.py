@@ -17,7 +17,7 @@ FAILURE_COLOR = (200, 50, 50)
 NEUTRAL_COLOR = (30, 30, 30)
 
 
-def _font(size: int) -> ImageFont.ImageFont:
+def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     for candidate in ("DejaVuSans-Bold.ttf", "Arial Bold.ttf", "Helvetica.ttc"):
         try:
             return ImageFont.truetype(candidate, size)
@@ -30,7 +30,7 @@ def draw_label(frame: np.ndarray, lines: Sequence[tuple[str, tuple[int, int, int
     image = Image.fromarray(frame)
     draw = ImageDraw.Draw(image)
     font = _font(max(14, frame.shape[0] // 22))
-    padding = font.size // 2
+    padding = int(getattr(font, "size", 14) // 2)
     y = padding
     for text, color in lines:
         left, top, right, bottom = draw.textbbox((padding, y), text, font=font)
@@ -39,7 +39,7 @@ def draw_label(frame: np.ndarray, lines: Sequence[tuple[str, tuple[int, int, int
             fill=(255, 255, 255),
         )
         draw.text((padding, y), text, font=font, fill=color)
-        y = bottom + padding
+        y = int(bottom + padding)
     return np.asarray(image)
 
 
@@ -122,7 +122,7 @@ def write_gif(
     for frame in selected:
         image = Image.fromarray(frame)
         height = round(image.height * width / image.width)
-        resized.append(image.resize((width, height), Image.LANCZOS))
+        resized.append(image.resize((width, height), Image.Resampling.LANCZOS))
     duration_ms = round(1000 * frame_stride / fps)
     resized[0].save(
         path, save_all=True, append_images=resized[1:], duration=duration_ms, loop=0, optimize=True

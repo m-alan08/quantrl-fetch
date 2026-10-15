@@ -61,7 +61,8 @@ def plot_ptq(arguments: argparse.Namespace) -> None:
 def plot_sweep(arguments: argparse.Namespace) -> None:
     frame = pd.read_csv(arguments.sweep_csv)
     methods = [method for method in METHOD_LABELS if method in set(frame["method"])]
-    expanded = pd.DataFrame(baseline_rows_for_methods(frame.to_dict("records"), methods))
+    records = [{str(key): value for key, value in row.items()} for row in frame.to_dict("records")]
+    expanded = pd.DataFrame(baseline_rows_for_methods(records, methods))
     expanded = expanded.assign(series=expanded["method"].map(METHOD_LABELS))
     order = [METHOD_LABELS[method] for method in methods]
     plot_success_vs_bits(expanded, arguments.out, arguments.title, "series", order)

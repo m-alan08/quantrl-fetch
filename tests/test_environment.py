@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import gymnasium as gym
 import gymnasium_robotics
 import numpy as np
@@ -20,7 +22,7 @@ def test_compute_reward_is_vectorized():
     achieved = np.zeros((5, 3))
     desired = np.zeros((5, 3))
     desired[0] = 1.0
-    rewards = env.unwrapped.compute_reward(achieved, desired, {})
+    rewards = cast(Any, env.unwrapped).compute_reward(achieved, desired, {})
     assert rewards.shape == (5,)
     assert rewards[0] == -1.0
     assert np.all(rewards[1:] == 0.0)
@@ -38,9 +40,8 @@ def test_reset_and_step_return_the_documented_types(env_id):
     for key in ("observation", "achieved_goal", "desired_goal"):
         assert observation[key].dtype == np.float64
         assert observation[key].ndim == 1
-        assert env.observation_space[key].contains(
-            observation[key].astype(env.observation_space[key].dtype)
-        )
+        space = cast(gym.spaces.Dict, env.observation_space)[key]
+        assert space.contains(observation[key].astype(space.dtype))
     action = env.action_space.sample()
     assert action.dtype == np.float32 and action.shape == (4,)
     observation, reward, terminated, truncated, info = env.step(action)
@@ -54,7 +55,7 @@ def test_reset_and_step_return_the_documented_types(env_id):
 def test_goal_handling_and_reward_range(env_id):
     env = gym.make(env_id)
     observation, _ = env.reset(seed=3)
-    goal = env.unwrapped.goal.copy()
+    goal = cast(Any, env.unwrapped).goal.copy()
     np.testing.assert_allclose(observation["desired_goal"], goal)
     rewards = []
     truncated = False
@@ -68,7 +69,7 @@ def test_goal_handling_and_reward_range(env_id):
         assert reward == (0.0 if distance < 0.05 else -1.0)
         assert info["is_success"] == float(distance < 0.05)
         rewards.append(reward)
-    assert steps == env.spec.max_episode_steps == 50
+    assert env.spec is not None and steps == env.spec.max_episode_steps == 50
     assert set(rewards) <= {0.0, -1.0}
     env.close()
 

@@ -167,6 +167,10 @@ class SACAgent:
         alpha_loss = -(self.log_alpha * (log_probs.detach() + self.target_entropy)).mean()
         self.alpha_optimizer.zero_grad(set_to_none=True)
         alpha_loss.backward()
+        if self.log_alpha.grad is None:
+            raise NonFiniteTrainingError(
+                f"SAC update {self.update_count}: log_alpha has no gradient"
+            )
         require_finite(self.update_count, alpha_loss=alpha_loss, log_alpha_grad=self.log_alpha.grad)
         self.alpha_optimizer.step()
 

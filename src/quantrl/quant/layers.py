@@ -20,6 +20,10 @@ RELU_ACTIVATION_GRIDS = ("signed", "unsigned")
 
 
 class ActivationQuantizer(nn.Module):
+    running_max_abs: torch.Tensor
+    initialized: torch.Tensor
+    frozen: torch.Tensor
+
     def __init__(self, bits: int, ema_momentum: float = 0.99, signed: bool = True):
         super().__init__()
         self.bits = validate_bits(bits)
@@ -88,6 +92,8 @@ class ActivationQuantizer(nn.Module):
 
 
 class QuantLinear(nn.Linear):
+    input_quantizer: ActivationQuantizer
+
     def __init__(
         self,
         in_features: int,
@@ -177,6 +183,10 @@ def build_quantized_actor(
         sac_config.log_std_max,
         quant_linear_factory(quant_config),
     )
+
+
+def quant_layers(module: nn.Module) -> list[QuantLinear]:
+    return [child for child in module.modules() if isinstance(child, QuantLinear)]
 
 
 def activation_quantizers(module: nn.Module) -> Iterator[ActivationQuantizer]:

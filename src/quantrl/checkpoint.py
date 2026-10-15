@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 
 from quantrl.algos.networks import GaussianActor, LinearFactory
@@ -88,11 +90,11 @@ def load_policy(path: str | Path) -> LoadedPolicy:
     )
 
 
-def deterministic_policy_function(actor: torch.nn.Module):
+def deterministic_policy_function(actor: GaussianActor) -> Callable[[np.ndarray], np.ndarray]:
     reference_parameter = next(actor.parameters())
 
     @torch.no_grad()
-    def policy(inputs):
+    def policy(inputs: np.ndarray) -> np.ndarray:
         tensor_inputs = torch.as_tensor(
             inputs, dtype=reference_parameter.dtype, device=reference_parameter.device
         )

@@ -19,7 +19,7 @@ QUANTIZER_BUFFER_SUFFIXES = (
 )
 
 
-def load_full_precision_weights(quantized_actor: GaussianActor, fp32_state: dict) -> None:
+def load_full_precision_weights(quantized_actor: torch.nn.Module, fp32_state: dict) -> None:
     target_state = quantized_actor.state_dict()
     expected_keys = {key for key in target_state if not key.endswith(QUANTIZER_BUFFER_SUFFIXES)}
     missing = sorted(expected_keys - set(fp32_state))

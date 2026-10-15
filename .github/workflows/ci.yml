@@ -20,8 +20,14 @@ jobs:
         run: uv run ruff check .
       - name: Ruff format check
         run: uv run ruff format --check .
+      - name: Mypy
+        run: uv run mypy
       - name: Pytest
-        run: uv run pytest -q
+        run: uv run pytest -q -rs
+      - name: Smoke test on CPU
+        run: uv run python scripts/smoke_test.py --device cpu
+      - name: Smoke test with GPUs hidden and device auto
+        run: CUDA_VISIBLE_DEVICES="" uv run python scripts/smoke_test.py --device auto
 
   headless-render:
     runs-on: ubuntu-latest

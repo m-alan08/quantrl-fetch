@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Sequence
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -37,10 +37,11 @@ class SweepPlan:
             raise ValueError(f"Unknown methods {sorted(unknown)}, expected some of {METHODS}")
         if FULL_PRECISION_BITS in self.bit_widths:
             raise ValueError("Bit widths for the sweep are low-bit only; fp32 is always included")
+        resolved_runs = [str(Path(item).resolve()) for item in self.fp32_run_dirs]
         for label, values in (
-            ("bit widths", self.bit_widths),
-            ("methods", self.methods),
-            ("fp32 run directories", [str(Path(item).resolve()) for item in self.fp32_run_dirs]),
+            ("bit widths", [str(bits) for bits in self.bit_widths]),
+            ("methods", list(self.methods)),
+            ("fp32 run directories", resolved_runs),
         ):
             duplicates = sorted({value for value in values if values.count(value) > 1})
             if duplicates:
@@ -207,10 +208,13 @@ def run_sweep(
                     f"{time.perf_counter() - started:.0f}s elapsed",
                     flush=True,
                 )
-        evaluation_futures = [
+        evaluation_futures: list[Future[Any]] = [
             executor.submit(evaluate_fp32_and_ptq, run_dir, plan, seeds)
             for run_dir in plan.fp32_run_dirs
-        ] + [executor.submit(evaluate_quantized_run, config.run_dir, seeds) for config in configs]
+        ]
+        evaluation_futures += [
+            executor.submit(evaluate_quantized_run, config.run_dir, seeds) for config in configs
+        ]
         rows: list[dict[str, Any]] = []
         for future in evaluation_futures:
             result = future.result()
