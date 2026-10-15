@@ -32,12 +32,21 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--finetune-set", nargs="*", default=[], metavar="KEY=VALUE")
     parser.add_argument("--scratch-set", nargs="*", default=[], metavar="KEY=VALUE")
     parser.add_argument("--output-dir", default="runs")
+    parser.add_argument(
+        "--device",
+        default=None,
+        help="Training device for QAT runs: auto, cpu, cuda, cuda:<index>, or mps",
+    )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--episodes", type=int, default=None)
     parser.add_argument("--out", required=True, help="Tidy per-seed CSV")
     parser.add_argument("--summary", required=True, help="Summary CSV across seeds")
     parser.add_argument("--timings", default=None, help="JSON with per-run training times")
     return parser.parse_args()
+
+
+def device_override(device: str | None) -> list[str]:
+    return [] if device is None else [f"device={device}"]
 
 
 def main() -> None:
@@ -50,8 +59,8 @@ def main() -> None:
         per_channel_weights=not arguments.per_tensor,
         relu_activation_grid=arguments.relu_grid,
         output_dir=arguments.output_dir,
-        finetune_overrides=arguments.finetune_set,
-        scratch_overrides=arguments.scratch_set,
+        finetune_overrides=[*arguments.finetune_set, *device_override(arguments.device)],
+        scratch_overrides=[*arguments.scratch_set, *device_override(arguments.device)],
     )
     started = time.perf_counter()
     rows, training_summaries = run_sweep(plan, arguments.workers, arguments.episodes)

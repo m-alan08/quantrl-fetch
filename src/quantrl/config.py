@@ -76,7 +76,8 @@ class EvalConfig:
 class RunConfig:
     name: str = "fetch_reach_fp32"
     seed: int = 0
-    device: str = "cpu"
+    device: str = "auto"
+    deterministic: bool = True
     torch_threads: int = 1
     output_dir: str = "runs"
     env: EnvConfig = field(default_factory=EnvConfig)

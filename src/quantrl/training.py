@@ -21,8 +21,9 @@ from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
 from quantrl.quant.layers import actor_linear_factory, critic_linear_factory
 from quantrl.quant.qat import check_dimensions, initialize_agent_from_checkpoint
+from quantrl.utils.device import describe_device, resolve_device
 from quantrl.utils.run_info import collect_run_metadata
-from quantrl.utils.seeding import resolve_device, seed_everything
+from quantrl.utils.seeding import seed_everything
 
 
 class ProgressLog:
@@ -101,12 +102,14 @@ def train(
 ) -> dict[str, Any]:
     run_dir = config.run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
-    rng = seed_everything(config.seed)
+    rng = seed_everything(config.seed, config.deterministic)
     torch.set_num_threads(config.torch_threads)
     device = resolve_device(config.device)
 
     metadata = collect_run_metadata(config.seed)
-    metadata["device"] = str(device)
+    metadata.update(describe_device(device))
+    metadata["requested_device"] = config.device
+    metadata["deterministic"] = config.deterministic
     metadata["torch_threads"] = config.torch_threads
     save_config(config, run_dir / "config.json")
     (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")

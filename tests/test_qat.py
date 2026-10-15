@@ -24,6 +24,7 @@ from quantrl.training import train
 from quantrl.viz.video import check_same_environment, compose_side_by_side
 
 SMOKE_OVERRIDES = [
+    "device=cpu",
     "sac.hidden_sizes=[32, 32]",
     "sac.batch_size=32",
     "train.total_steps=200",
