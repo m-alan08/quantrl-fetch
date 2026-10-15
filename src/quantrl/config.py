@@ -62,6 +62,7 @@ class TrainConfig:
     checkpoint_interval: int = 0
     init_checkpoint: str | None = None
     eval_at_start: bool = False
+    resume: bool = False
 
 
 @dataclass
@@ -291,6 +292,7 @@ def validate_config(config: RunConfig) -> RunConfig:
     if train.init_checkpoint is not None:
         check.text("train.init_checkpoint", train.init_checkpoint)
     check.boolean("train.eval_at_start", train.eval_at_start)
+    check.boolean("train.resume", train.resume)
 
     evaluation = config.eval
     check.integer("eval.episodes", evaluation.episodes, 1)

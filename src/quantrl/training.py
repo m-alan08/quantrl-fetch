@@ -28,6 +28,16 @@ from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
 from quantrl.quant.layers import actor_linear_factory, critic_linear_factory
 from quantrl.quant.qat import check_checkpoint_matches, initialize_agent_from_checkpoint
+from quantrl.resume import (
+    capture_buffer,
+    capture_rng_state,
+    check_resume_compatible,
+    load_resume_state,
+    restore_buffer,
+    restore_rng_state,
+    resume_path,
+    save_resume_state,
+)
 from quantrl.utils.device import describe_device, resolve_device
 from quantrl.utils.run_info import collect_run_metadata
 from quantrl.utils.seeding import seed_everything
@@ -38,6 +48,18 @@ class ProgressLog:
         self.path = path
         self.fieldnames: list[str] | None = None
         self.rows: list[dict[str, Any]] = []
+
+    def restore(self, last_step: int) -> None:
+        if not self.path.exists():
+            return
+        with self.path.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            self.fieldnames = list(reader.fieldnames or [])
+            self.rows = [row for row in reader if int(row["step"]) <= last_step]
+        with self.path.open("w", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=self.fieldnames, restval="")
+            writer.writeheader()
+            writer.writerows(self.rows)
 
     def write(self, row: dict[str, Any]) -> None:
         self.rows.append(row)
@@ -174,8 +196,13 @@ def train(
         actor_linear_factory=actor_factory or actor_linear_factory(config.quant),
         critic_linear_factory=critic_linear_factory(config.quant),
     )
+    saved_state = None
+    state_file = resume_path(run_dir)
+    if config.train.resume and state_file.exists():
+        saved_state = load_resume_state(state_file)
+        check_resume_compatible(saved_state["config"], config)
     calibration_inputs = 0
-    if config.train.init_checkpoint:
+    if config.train.init_checkpoint and saved_state is None:
         initial_checkpoint = load_checkpoint(config.train.init_checkpoint)
         check_checkpoint_matches(initial_checkpoint, config, asdict(dimensions))
         calibration_inputs = initialize_agent_from_checkpoint(
@@ -183,7 +210,6 @@ def train(
         )
     metadata["init_checkpoint"] = config.train.init_checkpoint
     metadata["calibration_inputs"] = calibration_inputs
-    (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
 
     def policy(inputs: np.ndarray) -> np.ndarray:
         return agent.act(inputs, deterministic=True)
@@ -197,8 +223,33 @@ def train(
     next_checkpoint_step = config.train.checkpoint_interval or None
     recent_metrics: dict[str, list[float]] = defaultdict(list)
     recent_train_success: list[float] = []
-    start_time = time.perf_counter()
+    previous_train_seconds = 0.0
     eval_seconds = 0.0
+    if saved_state is not None:
+        agent.load_state_dict(saved_state["agent"])
+        agent.update_count = saved_state["update_count"]
+        normalizer.load_state_dict(saved_state["normalizer"])
+        restore_buffer(buffer, saved_state["buffer"])
+        counters = saved_state["counters"]
+        total_steps = counters["total_steps"]
+        episodes = counters["episodes"]
+        next_eval_step = counters["next_eval_step"]
+        next_checkpoint_step = counters["next_checkpoint_step"]
+        update_scheduler.carry = counters["update_carry"]
+        previous_train_seconds = counters["train_seconds"]
+        eval_seconds = counters["eval_seconds"]
+        recent_metrics = defaultdict(list, saved_state["recent_metrics"])
+        recent_train_success = list(saved_state["recent_train_success"])
+        progress.restore(total_steps)
+        restore_rng_state(saved_state["rng"], env, device)
+        metadata["resumed_from_step"] = total_steps
+        metadata["resume_count"] = saved_state["metadata"].get("resume_count", 0) + 1
+        if verbose:
+            print(f"[{config.name} seed {config.seed}] resuming at step {total_steps}", flush=True)
+    elif config.train.resume and verbose:
+        print(f"[{config.name} seed {config.seed}] no saved state to resume, starting fresh")
+    (run_dir / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    start_time = time.perf_counter()
 
     def checkpoint(path: Path) -> None:
         save_checkpoint(
@@ -209,6 +260,32 @@ def train(
             asdict(dimensions),
             metadata,
             total_steps,
+        )
+
+    def write_resume_state() -> None:
+        save_resume_state(
+            state_file,
+            {
+                "config": config.to_dict(),
+                "metadata": metadata,
+                "dimensions": asdict(dimensions),
+                "agent": agent.state_dict(),
+                "update_count": agent.update_count,
+                "normalizer": normalizer.state_dict(),
+                "buffer": capture_buffer(buffer),
+                "counters": {
+                    "total_steps": total_steps,
+                    "episodes": episodes,
+                    "next_eval_step": next_eval_step,
+                    "next_checkpoint_step": next_checkpoint_step,
+                    "update_carry": update_scheduler.carry,
+                    "train_seconds": previous_train_seconds + time.perf_counter() - start_time,
+                    "eval_seconds": eval_seconds,
+                },
+                "recent_metrics": dict(recent_metrics),
+                "recent_train_success": list(recent_train_success),
+                "rng": capture_rng_state(env, device),
+            },
         )
 
     def evaluate_and_log() -> None:
@@ -226,7 +303,7 @@ def train(
         row = {
             "step": total_steps,
             "episodes": episodes,
-            "wall_seconds": round(time.perf_counter() - start_time, 2),
+            "wall_seconds": round(previous_train_seconds + time.perf_counter() - start_time, 2),
             "train_success": float(np.mean(recent_train_success))
             if recent_train_success
             else float("nan"),
@@ -249,7 +326,7 @@ def train(
         recent_metrics.clear()
         recent_train_success.clear()
 
-    if config.train.eval_at_start:
+    if config.train.eval_at_start and saved_state is None:
         evaluate_and_log()
 
     while total_steps < config.train.total_steps:
@@ -269,7 +346,8 @@ def train(
                 for key, value in agent.update(batch).items():
                     recent_metrics[key].append(value)
 
-        if next_checkpoint_step is not None and total_steps >= next_checkpoint_step:
+        save_due = next_checkpoint_step is not None and total_steps >= next_checkpoint_step
+        if save_due:
             checkpoint(run_dir / f"checkpoint_{total_steps}.pt")
             next_checkpoint_step += config.train.checkpoint_interval
 
@@ -277,8 +355,12 @@ def train(
             evaluate_and_log()
             next_eval_step += config.train.eval_interval
 
-    train_seconds = time.perf_counter() - start_time
+        if save_due:
+            write_resume_state()
+
+    train_seconds = previous_train_seconds + time.perf_counter() - start_time
     checkpoint(run_dir / "checkpoint.pt")
+    write_resume_state()
 
     final_seeds = evaluation_seeds(config.eval.seed_offset, config.eval.episodes)
     final_result, _ = evaluate_policy(
