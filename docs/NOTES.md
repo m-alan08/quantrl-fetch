@@ -45,7 +45,7 @@ This file explains how the code is organized and why. It is updated in the same 
 | `scripts/train.py` | Trains one or more seeds from a config file with optional overrides. |
 | `scripts/evaluate.py` | Evaluates checkpoints and writes a tidy per-seed CSV and a JSON summary across seeds. |
 | `scripts/evaluate_ptq.py` | Runs the PTQ grid for a set of checkpoints and writes a tidy per-seed CSV and a summary CSV across seeds. |
-| `scripts/make_plots.py` | Plots training curves (`--runs`), the PTQ grid (`--ptq-csv`), or the method comparison (`--sweep-csv`). |
+| `scripts/make_plots.py` | Plots training curves (`--runs`), the PTQ grid (`--ptq-csv`, optionally narrowed with `--targets` and `--relu-grids`), or the method comparison (`--sweep-csv`). |
 | `scripts/make_video.py` | Renders labeled evaluation episodes of a checkpoint to mp4 and gif, or two policies side by side on the same episodes (`--compare-checkpoint`, or `--compare-ptq-bits` for a PTQ copy of the same actor). |
 | `scripts/sweep.py` | Runs the sweep and writes a tidy per-seed CSV, a summary across seeds, and per-run training times. |
 | `scripts/smoke_test.py` | One-command end-to-end check on a chosen device with a PASS or FAIL table and a nonzero exit code on failure. |
@@ -222,18 +222,22 @@ In the plot, the fp32 result is drawn as the leftmost point of every method's li
 
 ### What the method comparison showed
 
+These numbers are from the rerun with the unsigned grid after ReLU and the straight-through estimator fix (concerns B and H in [DESIGN.md](DESIGN.md)). The README also lists the earlier numbers next to them.
+
 On FetchReach (3 seeds, per-channel weights, details and numbers in the README):
 
-- QAT fine-tuning brought 4 and 5 bits to 100 percent success on every seed, from 82 and 98 percent with PTQ. On the 4-bit episodes that PTQ fails for seed 0, the fine-tuned actor succeeded on every one of the first 12.
-- QAT from scratch reached 96 percent at 4 bits with the same budget as the fp32 baseline.
-- At 3 bits no method passed about 50 percent. The fine-tuned actor stays close to its PTQ starting point instead of improving, which is what an input-resolution limit would predict: the step of a 3-bit input grid is roughly twice the 4-bit step of about 3 cm, so the actor cannot tell apart goals that the task needs it to tell apart, no matter how its weights are trained. A direct test would keep the first layer's input at higher precision.
+- QAT fine-tuning brought 4 and 5 bits to 100 percent success on every seed, from 88 and 98 percent with PTQ. For seed 0, 4-bit PTQ fails 11 of the 100 evaluation episodes, and the fine-tuned actor succeeds on all 11.
+- QAT from scratch reached 99 percent at 4 bits with the same budget as the fp32 baseline.
+- At 3 bits no method passed 50 percent (25 to 44 percent). Fine-tuning adds about 8 points over its PTQ starting point and then stops, which is what an input-resolution limit would predict: the step of a 3-bit input grid is roughly twice the 4-bit step of about 3 cm, so the actor cannot tell apart goals that the task needs it to tell apart, no matter how its weights are trained. A direct test would keep the first layer's input at higher precision.
 - Fine-tuning improves final precision for every bit width, but the fp32 fine-tuning control shows that most of that comes from the extra training: the fp32 actor fine-tuned with the same recipe ends 0.9 cm from the goal on average, against 3.1 cm before fine-tuning.
 
-On FetchPush, PTQ collapses earlier: 95 percent at 6 bits, 83 at 5, 15 at 4, and the do-nothing floor of 8 percent at 3 and 2 bits. Weights alone at 4 bits keep 87 percent, so activations are again the main problem. Pushing a block needs finer control than reaching a point, which fits the larger sensitivity.
+On FetchPush, PTQ collapses earlier: 98 percent at 6 bits, 87 at 5, 21 at 4, and the do-nothing floor of about 8 percent at 3 and 2 bits. Weights alone at 4 bits keep 87 percent, so activations are again the main problem. Pushing a block needs finer control than reaching a point, which fits the larger sensitivity.
 
-The full FetchPush comparison reverses part of the FetchReach picture. QAT from scratch is clearly best (96.3 percent at 5 bits, 39.3 at 4), while QAT fine-tuning helps only at 6 bits and is no better than PTQ at 5 and 4. The fp32 fine-tuning control (99.3 percent after the same 100,000 steps) rules out the recipe simply damaging the policy. Two differences from FetchReach could explain it, neither tested yet: fine-tuning had a tenth of the baseline budget, and on FetchPush a failing low-bit actor rarely moves the block, so the fresh replay buffer it fills holds little useful pushing experience, whereas on FetchReach even a failing actor ends near the goal. QAT from scratch avoids both by learning with the quantized actor from the start, with the full budget and a buffer that grows with the policy.
+The full FetchPush comparison differs from FetchReach at 4 bits. QAT from scratch is clearly best (98.7 percent at 5 bits, 74.0 at 4). QAT fine-tuning recovers 5 bits (96.3 percent) but reaches only 38.7 percent at 4 bits, where on FetchReach it reached 100. The fp32 fine-tuning control (99.3 percent after the same 100,000 steps) rules out the recipe simply damaging the policy. Two differences from FetchReach could explain the 4-bit gap, neither tested yet: fine-tuning had a tenth of the baseline budget, and on FetchPush a failing low-bit actor rarely moves the block, so the fresh replay buffer it fills holds little useful pushing experience, whereas on FetchReach even a failing actor ends near the goal. QAT from scratch avoids both by learning with the quantized actor from the start, with the full budget and a buffer that grows with the policy.
 
-At 3 and 2 bits even QAT from scratch scores slightly below the 8 percent do-nothing floor, so the quantized actor actively disturbs blocks that started at the goal. Below 4 bits, none of these methods produce a usable FetchPush actor.
+At 3 and 2 bits every method stays at the do-nothing floor (7.3 to 8.7 percent). Below 4 bits, none of these methods produce a usable FetchPush actor.
+
+Compared with the earlier runs, the largest changes are on FetchPush at 4 bits: QAT from scratch went from 39.3 to 74.0 percent and QAT fine-tuning from 10.7 to 38.7. Both fixes changed at the same time, so these runs do not say how much each one contributed. PTQ changed only through the grid, since it uses no gradients.
 
 ## Design decisions
 
@@ -245,7 +249,7 @@ At 3 and 2 bits even QAT from scratch scores slightly below the 8 percent do-not
 
 ## Known limitations
 
-- Layer inputs that come out of a ReLU use an unsigned grid (levels 0 to 2^b - 1) by default, since they are never negative. The first layer's input, the normalized observation, stays on the symmetric grid. Results produced before this change used the symmetric grid everywhere; `quant.relu_activation_grid = "signed"` restores that, and saved quantized runs without the field are read that way.
+- Layer inputs that come out of a ReLU use an unsigned grid (levels 0 to 2^b - 1) by default, since they are never negative. The first layer's input, the normalized observation, stays on the symmetric grid. Results produced before this change used the symmetric grid everywhere and have all been rerun; `quant.relu_activation_grid = "signed"` restores the old grid, and saved quantized runs without the field are read that way.
 - The scale is the maximum magnitude, not a percentile or a learned step size, so a single outlier activation in the calibration data stretches the grid for everything else.
 
 - The mujoco pin above should be revisited when gymnasium-robotics releases a fix.
