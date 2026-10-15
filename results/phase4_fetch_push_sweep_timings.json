@@ -1,256 +1,256 @@
 {
-  "sweep_wall_seconds": 18342.9,
+  "sweep_wall_seconds": 24599.1,
   "workers": 9,
   "runs": [
     {
       "name": "fetch_push_fp32_qat_finetune_w2a2",
       "seed": 0,
-      "train_wall_seconds": 1001.41,
+      "train_wall_seconds": 1009.98,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w2a2",
       "seed": 1,
-      "train_wall_seconds": 973.54,
+      "train_wall_seconds": 1025.94,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w2a2",
       "seed": 2,
-      "train_wall_seconds": 501.73,
+      "train_wall_seconds": 999.18,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w3a3",
       "seed": 0,
-      "train_wall_seconds": 1012.68,
+      "train_wall_seconds": 1193.36,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w3a3",
       "seed": 1,
-      "train_wall_seconds": 967.64,
+      "train_wall_seconds": 998.7,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w3a3",
       "seed": 2,
-      "train_wall_seconds": 508.29,
+      "train_wall_seconds": 1032.17,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w4a4",
       "seed": 0,
-      "train_wall_seconds": 1001.32,
+      "train_wall_seconds": 1187.66,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w4a4",
       "seed": 1,
-      "train_wall_seconds": 973.2,
+      "train_wall_seconds": 996.3,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w4a4",
       "seed": 2,
-      "train_wall_seconds": 979.11,
+      "train_wall_seconds": 1022.54,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w5a5",
       "seed": 0,
-      "train_wall_seconds": 1001.21,
+      "train_wall_seconds": 1182.37,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w5a5",
       "seed": 1,
-      "train_wall_seconds": 970.78,
+      "train_wall_seconds": 998.35,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w5a5",
       "seed": 2,
-      "train_wall_seconds": 968.33,
+      "train_wall_seconds": 1015.46,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w6a6",
       "seed": 0,
-      "train_wall_seconds": 994.2,
+      "train_wall_seconds": 1174.86,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w6a6",
       "seed": 1,
-      "train_wall_seconds": 996.86,
+      "train_wall_seconds": 991.59,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w6a6",
       "seed": 2,
-      "train_wall_seconds": 972.38,
+      "train_wall_seconds": 1021.67,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w8a8",
       "seed": 0,
-      "train_wall_seconds": 994.92,
+      "train_wall_seconds": 1176.6,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w8a8",
       "seed": 1,
-      "train_wall_seconds": 1003.34,
+      "train_wall_seconds": 1017.11,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_finetune_w8a8",
       "seed": 2,
-      "train_wall_seconds": 968.97,
+      "train_wall_seconds": 1015.54,
       "total_steps": 100000,
-      "reused": true
+      "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w2a2",
       "seed": 0,
-      "train_wall_seconds": 8915.46,
+      "train_wall_seconds": 10819.0,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w2a2",
       "seed": 1,
-      "train_wall_seconds": 9285.96,
+      "train_wall_seconds": 10507.51,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w2a2",
       "seed": 2,
-      "train_wall_seconds": 8916.71,
+      "train_wall_seconds": 8298.37,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w3a3",
       "seed": 0,
-      "train_wall_seconds": 9195.81,
+      "train_wall_seconds": 10850.59,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w3a3",
       "seed": 1,
-      "train_wall_seconds": 9131.43,
+      "train_wall_seconds": 10697.91,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w3a3",
       "seed": 2,
-      "train_wall_seconds": 8972.01,
+      "train_wall_seconds": 8956.07,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w4a4",
       "seed": 0,
-      "train_wall_seconds": 9005.89,
+      "train_wall_seconds": 11084.58,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w4a4",
       "seed": 1,
-      "train_wall_seconds": 8965.1,
+      "train_wall_seconds": 10592.57,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w4a4",
       "seed": 2,
-      "train_wall_seconds": 8992.16,
+      "train_wall_seconds": 9526.73,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w5a5",
       "seed": 0,
-      "train_wall_seconds": 9020.72,
+      "train_wall_seconds": 11032.07,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w5a5",
       "seed": 1,
-      "train_wall_seconds": 9015.65,
+      "train_wall_seconds": 10824.52,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w5a5",
       "seed": 2,
-      "train_wall_seconds": 9044.02,
+      "train_wall_seconds": 10083.42,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w6a6",
       "seed": 0,
-      "train_wall_seconds": 9007.12,
+      "train_wall_seconds": 11077.46,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w6a6",
       "seed": 1,
-      "train_wall_seconds": 8984.95,
+      "train_wall_seconds": 10917.79,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w6a6",
       "seed": 2,
-      "train_wall_seconds": 9028.12,
+      "train_wall_seconds": 10142.67,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w8a8",
       "seed": 0,
-      "train_wall_seconds": 9049.62,
+      "train_wall_seconds": 11051.37,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w8a8",
       "seed": 1,
-      "train_wall_seconds": 9054.85,
+      "train_wall_seconds": 10916.83,
       "total_steps": 1000000,
       "reused": false
     },
     {
       "name": "fetch_push_fp32_qat_scratch_w8a8",
       "seed": 2,
-      "train_wall_seconds": 9048.32,
+      "train_wall_seconds": 10456.54,
       "total_steps": 1000000,
       "reused": false
     }
