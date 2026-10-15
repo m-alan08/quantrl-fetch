@@ -7,7 +7,12 @@ import sys
 
 import pytest
 
-from quantrl.rendering import RenderingSetupError, choose_render_backend, configure_rendering
+from quantrl.rendering import (
+    RenderingSetupError,
+    check_environment_before_mujoco_import,
+    choose_render_backend,
+    configure_rendering,
+)
 
 RENDER_ONE_FRAME = """
 import json, sys
@@ -24,20 +29,46 @@ print(json.dumps({"backend": backend, "shape": list(frame.shape), "std": float(f
 """
 
 
+def all_libraries(backend):
+    return True
+
+
+def no_libraries(backend):
+    return False
+
+
+def osmesa_only(backend):
+    return backend == "osmesa"
+
+
 @pytest.mark.parametrize(
-    "requested, system, environ, expected",
+    "requested, system, environ, finder, expected",
     [
-        ("auto", "Linux", {}, "egl"),
-        ("auto", "Linux", {"DISPLAY": ":0"}, None),
-        ("auto", "Linux", {"WAYLAND_DISPLAY": "wayland-0"}, None),
-        ("auto", "Linux", {"MUJOCO_GL": "osmesa"}, "osmesa"),
-        ("auto", "Darwin", {}, None),
-        ("osmesa", "Linux", {"DISPLAY": ":0"}, "osmesa"),
-        ("glfw", "Darwin", {}, "glfw"),
+        ("auto", "Linux", {}, all_libraries, "egl"),
+        ("auto", "Linux", {}, osmesa_only, "osmesa"),
+        ("auto", "Linux", {"DISPLAY": ":0"}, no_libraries, None),
+        ("auto", "Linux", {"WAYLAND_DISPLAY": "wayland-0"}, no_libraries, None),
+        ("auto", "Linux", {"MUJOCO_GL": "osmesa"}, all_libraries, "osmesa"),
+        ("auto", "Darwin", {}, no_libraries, None),
+        ("osmesa", "Linux", {"DISPLAY": ":0"}, all_libraries, "osmesa"),
+        ("glfw", "Darwin", {}, no_libraries, "glfw"),
     ],
 )
-def test_backend_choice(requested, system, environ, expected):
-    assert choose_render_backend(requested, system, environ) == expected
+def test_backend_choice(requested, system, environ, finder, expected):
+    assert choose_render_backend(requested, system, environ, finder) == expected
+
+
+def test_headless_linux_without_libraries_explains_what_to_install():
+    with pytest.raises(RenderingSetupError, match="neither the EGL nor the OSMesa library"):
+        choose_render_backend("auto", "Linux", {}, no_libraries)
+
+
+@pytest.mark.parametrize("backend", ["egl", "osmesa"])
+def test_explicit_backend_without_its_library_explains_what_to_install(backend):
+    with pytest.raises(RenderingSetupError, match="system library"):
+        choose_render_backend(backend, "Linux", {}, no_libraries)
+    with pytest.raises(RenderingSetupError, match="unset MUJOCO_GL"):
+        check_environment_before_mujoco_import({"MUJOCO_GL": backend}, no_libraries, {})
 
 
 @pytest.mark.parametrize("requested", ["egl", "osmesa"])
@@ -55,7 +86,7 @@ def test_configure_sets_the_environment_for_headless_linux():
     environ = {}
     if "mujoco" in sys.modules:
         environ["MUJOCO_GL"] = "egl"
-    assert configure_rendering("auto", environ, "Linux") == "egl"
+    assert configure_rendering("auto", environ, "Linux", all_libraries) == "egl"
     assert environ["MUJOCO_GL"] == "egl"
     assert environ["PYOPENGL_PLATFORM"] == "egl"
 
@@ -63,7 +94,7 @@ def test_configure_sets_the_environment_for_headless_linux():
 def test_choosing_a_backend_after_mujoco_is_imported_is_refused():
     importlib.import_module("mujoco")
     with pytest.raises(RenderingSetupError, match="already imported"):
-        configure_rendering("osmesa", {"MUJOCO_GL": "egl"}, "Linux")
+        configure_rendering("osmesa", {"MUJOCO_GL": "egl"}, "Linux", all_libraries)
 
 
 def render_in_subprocess(backend):
@@ -80,6 +111,10 @@ def render_in_subprocess(backend):
 
 
 def test_rendering_works_with_the_automatic_backend():
+    try:
+        choose_render_backend("auto")
+    except RenderingSetupError as error:
+        pytest.skip(f"no render backend on this machine: {error}")
     result = render_in_subprocess("auto")
     assert result["shape"] == [64, 64, 3]
     assert result["std"] > 1.0
