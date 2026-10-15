@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import math
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -114,8 +116,218 @@ def _build_dataclass(cls: type, values: dict[str, Any]) -> Any:
     return cls(**kwargs)
 
 
+QUANT_METHODS = ("fp32", "fp32_finetune", "ptq", "qat_finetune", "qat_scratch")
+FULL_PRECISION_METHODS = ("fp32", "fp32_finetune")
+RELU_GRIDS = ("signed", "unsigned")
+DEVICE_NAMES = ("auto", "cpu", "cuda", "mps")
+FULL_PRECISION_BITS = 32
+MIN_BITS = 2
+MAX_BITS = 16
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _is_number(value: Any) -> bool:
+    return (_is_int(value) or isinstance(value, float)) and math.isfinite(value)
+
+
+class _Checker:
+    def __init__(self) -> None:
+        self.problems: list[str] = []
+
+    def require(self, condition: bool, message: str) -> None:
+        if not condition:
+            self.problems.append(message)
+
+    def integer(self, name: str, value: Any, minimum: int | None = None) -> None:
+        if not _is_int(value):
+            self.problems.append(f"{name} must be an integer, got {value!r}")
+        elif minimum is not None and value < minimum:
+            self.problems.append(f"{name} must be at least {minimum}, got {value}")
+
+    def number(
+        self,
+        name: str,
+        value: Any,
+        low: float | None = None,
+        high: float | None = None,
+        low_inclusive: bool = True,
+        high_inclusive: bool = True,
+    ) -> None:
+        if not _is_number(value):
+            self.problems.append(f"{name} must be a finite number, got {value!r}")
+            return
+        if low is not None and (value < low or (value == low and not low_inclusive)):
+            bound = ">=" if low_inclusive else ">"
+            self.problems.append(f"{name} must be {bound} {low}, got {value}")
+        if high is not None and (value > high or (value == high and not high_inclusive)):
+            bound = "<=" if high_inclusive else "<"
+            self.problems.append(f"{name} must be {bound} {high}, got {value}")
+
+    def boolean(self, name: str, value: Any) -> None:
+        if not isinstance(value, bool):
+            self.problems.append(f"{name} must be true or false, got {value!r}")
+
+    def bits(self, name: str, value: Any) -> None:
+        if not (_is_int(value) and (value == FULL_PRECISION_BITS or MIN_BITS <= value <= MAX_BITS)):
+            self.problems.append(
+                f"{name} must be an integer from {MIN_BITS} to {MAX_BITS}, "
+                f"or {FULL_PRECISION_BITS} for full precision, got {value!r}"
+            )
+
+    def text(self, name: str, value: Any) -> None:
+        if not isinstance(value, str) or not value.strip():
+            self.problems.append(f"{name} must be a non-empty string, got {value!r}")
+
+
+def validate_config(config: RunConfig) -> RunConfig:
+    check = _Checker()
+    check.text("name", config.name)
+    check.require(
+        not isinstance(config.name, str) or ("/" not in config.name and "\\" not in config.name),
+        f"name must not contain path separators, got {config.name!r}",
+    )
+    check.integer("seed", config.seed, 0)
+    check.require(
+        isinstance(config.device, str)
+        and (config.device in DEVICE_NAMES or re.fullmatch(r"cuda:\d+", config.device) is not None),
+        f"device must be one of {DEVICE_NAMES} or 'cuda:<index>', got {config.device!r}",
+    )
+    check.boolean("deterministic", config.deterministic)
+    check.integer("torch_threads", config.torch_threads, 1)
+    check.text("output_dir", config.output_dir)
+
+    env = config.env
+    check.text("env.env_id", env.env_id)
+    if env.max_episode_steps is not None:
+        check.integer("env.max_episode_steps", env.max_episode_steps, 1)
+    check.number("env.obs_clip", env.obs_clip, 0, low_inclusive=False)
+    check.number("env.normalized_clip", env.normalized_clip, 0, low_inclusive=False)
+    check.number("env.normalizer_eps", env.normalizer_eps, 0, low_inclusive=False)
+
+    quant = config.quant
+    check.require(
+        quant.method in QUANT_METHODS,
+        f"quant.method must be one of {QUANT_METHODS}, got {quant.method!r}",
+    )
+    check.bits("quant.weight_bits", quant.weight_bits)
+    check.bits("quant.activation_bits", quant.activation_bits)
+    check.boolean("quant.per_channel_weights", quant.per_channel_weights)
+    check.number("quant.activation_ema_momentum", quant.activation_ema_momentum, 0, 1)
+    check.boolean("quant.quantize_critics", quant.quantize_critics)
+    check.require(
+        quant.relu_activation_grid in RELU_GRIDS,
+        f"quant.relu_activation_grid must be one of {RELU_GRIDS}, "
+        f"got {quant.relu_activation_grid!r}",
+    )
+    full_precision = (
+        quant.weight_bits == FULL_PRECISION_BITS and quant.activation_bits == FULL_PRECISION_BITS
+    )
+    if quant.method in FULL_PRECISION_METHODS:
+        check.require(
+            full_precision,
+            f"quant.method {quant.method!r} needs weight_bits and activation_bits of 32",
+        )
+    elif quant.method in ("qat_finetune", "qat_scratch"):
+        check.require(
+            not full_precision,
+            f"quant.method {quant.method!r} needs weight_bits or activation_bits below 32",
+        )
+    if quant.method in ("qat_finetune", "fp32_finetune"):
+        check.require(
+            config.train.init_checkpoint is not None,
+            f"quant.method {quant.method!r} needs train.init_checkpoint",
+        )
+    if quant.method in ("fp32", "qat_scratch"):
+        check.require(
+            config.train.init_checkpoint is None,
+            f"quant.method {quant.method!r} trains from scratch, "
+            "so train.init_checkpoint must be null",
+        )
+
+    sac = config.sac
+    check.require(
+        isinstance(sac.hidden_sizes, list)
+        and len(sac.hidden_sizes) > 0
+        and all(_is_int(size) and size > 0 for size in sac.hidden_sizes),
+        f"sac.hidden_sizes must be a non-empty list of positive integers, got {sac.hidden_sizes!r}",
+    )
+    check.number("sac.actor_lr", sac.actor_lr, 0, low_inclusive=False)
+    check.number("sac.critic_lr", sac.critic_lr, 0, low_inclusive=False)
+    check.number("sac.alpha_lr", sac.alpha_lr, 0)
+    check.number("sac.gamma", sac.gamma, 0, 1, low_inclusive=False, high_inclusive=False)
+    check.number("sac.tau", sac.tau, 0, 1, low_inclusive=False)
+    check.integer("sac.batch_size", sac.batch_size, 1)
+    check.number("sac.initial_alpha", sac.initial_alpha, 0, low_inclusive=False)
+    if sac.target_entropy is not None:
+        check.number("sac.target_entropy", sac.target_entropy)
+    check.number("sac.log_std_min", sac.log_std_min)
+    check.number("sac.log_std_max", sac.log_std_max)
+    if _is_number(sac.log_std_min) and _is_number(sac.log_std_max):
+        check.require(
+            sac.log_std_min < sac.log_std_max,
+            f"sac.log_std_min ({sac.log_std_min}) must be below "
+            f"sac.log_std_max ({sac.log_std_max})",
+        )
+    check.boolean("sac.clip_q_target", sac.clip_q_target)
+
+    check.integer("her.replay_k", config.her.replay_k, 0)
+    check.integer("her.buffer_episodes", config.her.buffer_episodes, 1)
+
+    train = config.train
+    check.integer("train.total_steps", train.total_steps, 1)
+    check.integer("train.random_steps", train.random_steps, 0)
+    check.integer("train.update_after", train.update_after, 0)
+    check.number("train.updates_per_step", train.updates_per_step, 0)
+    check.integer("train.eval_interval", train.eval_interval, 1)
+    check.integer("train.eval_episodes", train.eval_episodes, 1)
+    check.integer("train.checkpoint_interval", train.checkpoint_interval, 0)
+    if train.init_checkpoint is not None:
+        check.text("train.init_checkpoint", train.init_checkpoint)
+    check.boolean("train.eval_at_start", train.eval_at_start)
+
+    evaluation = config.eval
+    check.integer("eval.episodes", evaluation.episodes, 1)
+    check.integer("eval.seed_offset", evaluation.seed_offset, 0)
+    check.integer("eval.calibration_seed_offset", evaluation.calibration_seed_offset, 0)
+    check.integer("eval.calibration_episodes", evaluation.calibration_episodes, 1)
+    check.integer("eval.bootstrap_resamples", evaluation.bootstrap_resamples, 1)
+    check.number(
+        "eval.confidence", evaluation.confidence, 0, 1, low_inclusive=False, high_inclusive=False
+    )
+    seed_fields = (
+        evaluation.seed_offset,
+        evaluation.episodes,
+        evaluation.calibration_seed_offset,
+        evaluation.calibration_episodes,
+        train.eval_episodes,
+    )
+    if all(_is_int(value) for value in seed_fields):
+        evaluation_end = evaluation.seed_offset + max(evaluation.episodes, train.eval_episodes)
+        calibration_end = evaluation.calibration_seed_offset + evaluation.calibration_episodes
+        check.require(
+            calibration_end <= evaluation.seed_offset
+            or evaluation_end <= evaluation.calibration_seed_offset,
+            "calibration seeds and evaluation seeds overlap: "
+            f"evaluation uses [{evaluation.seed_offset}, {evaluation_end}), "
+            f"calibration uses [{evaluation.calibration_seed_offset}, {calibration_end})",
+        )
+
+    if check.problems:
+        raise ConfigError(
+            "Invalid config:\n" + "\n".join(f"  - {problem}" for problem in check.problems)
+        )
+    return config
+
+
 def config_from_dict(values: dict[str, Any]) -> RunConfig:
-    return _build_dataclass(RunConfig, values)
+    return validate_config(_build_dataclass(RunConfig, values))
 
 
 def saved_config_from_dict(values: dict[str, Any]) -> RunConfig:

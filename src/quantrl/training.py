@@ -15,7 +15,7 @@ from quantrl.algos.networks import LinearFactory
 from quantrl.algos.replay import HindsightReplayBuffer
 from quantrl.algos.sac import UPDATE_METRIC_NAMES, SACAgent
 from quantrl.checkpoint import load_checkpoint, save_checkpoint
-from quantrl.config import RunConfig, save_config
+from quantrl.config import RunConfig, save_config, validate_config
 from quantrl.envs.factory import env_dimensions, make_env
 from quantrl.envs.normalizer import GoalObservationNormalizer
 from quantrl.eval.evaluate import evaluate_policy, evaluation_seeds
@@ -100,6 +100,11 @@ def train(
     actor_factory: LinearFactory | None = None,
     verbose: bool = True,
 ) -> dict[str, Any]:
+    validate_config(config)
+    if config.train.init_checkpoint and not Path(config.train.init_checkpoint).is_file():
+        raise FileNotFoundError(
+            f"train.init_checkpoint points to {config.train.init_checkpoint!r}, which is not a file"
+        )
     run_dir = config.run_dir
     run_dir.mkdir(parents=True, exist_ok=True)
     rng = seed_everything(config.seed, config.deterministic)
